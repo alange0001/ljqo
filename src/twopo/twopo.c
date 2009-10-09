@@ -6,6 +6,9 @@
  *   Implementation based on:
  *   [1] Y. E. Ioannidis and Y. Kang, "Randomized algorithms for optimizing
  *       large join queries," SIGMOD Rec., vol. 19, no. 2, pp. 312–321, 1990.
+ *   [2] P. Guttoski, M. Sunye, and F. Silva, "Kruskal's algorithm for query
+ *       tree optimization," in Database Engineering and Applications Symposium,
+ *       2007. IDEAS 2007. 11th International, Sept. 2007, pp. 296–302.
  *
  *   All adaptations and design decisions were made by Adriano Lange.
  *
@@ -786,6 +789,10 @@ buildTree( State *state )
 //////////////////////////////////////////////////////////////////////////////
 /////////////////////// Initial States Functions /////////////////////////////
 
+/**
+ * heuristicState_1_qsort
+ * Heuristic initial state [2]. qsort function.
+ */
 static int
 heuristicState_1_qsort(const void* x, const void* y)
 {
@@ -797,6 +804,10 @@ heuristicState_1_qsort(const void* x, const void* y)
 	return 0;
 }
 
+/**
+ * heuristicState_1
+ * Heuristic initial state [2].
+ */
 static Edge *
 heuristicState_1(twopoEssentials *essentials)
 {
@@ -1104,7 +1115,6 @@ neighbordStateLeftDeep(State *output, State *input, bool *fail)
 	return output;
 }
 
-//TODO: faltando left-deep
 static State *
 neighbordState(State *output, State *input)
 {

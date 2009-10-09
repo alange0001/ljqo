@@ -22,26 +22,37 @@ AC_CHECK_HEADERS([limits.h])
 AC_ARG_WITH([pgsql],
 	    [AC_HELP_STRING([--with-pgsql=PREFIX],[PostgreSQL installation prefix])],
 	    [arg_pgsql=$withval],
-	    [arg_pgsql=$prefix])
+	    [arg_pgsql=""])
 
-for pgdir in $arg_pgsql $prefix; do
-	for pginclude in $pgdir/include $pgdir/include/server $pgdir/include/postgresql/server; do
-		AC_MSG_CHECKING([for postgres.h in "$pginclude"])
-		if [ test -f "$pginclude/postgres.h" ]; then
-			AC_MSG_RESULT([yes]);
-			CPPFLAGS="$CPPFLAGS -I$pginclude";
-			pginclude_ok="1";
+if test -z "$arg_pgsql"; then
+	AC_PATH_PROG(PG_CONFIG, pg_config)
+	if test ! -z "$PG_CONFIG"; then
+		pg_includedir="`$PG_CONFIG --includedir-server`"
+		pg_libdir="`$PG_CONFIG --pkglibdir`"
+	fi
+fi
+if test -z "$pg_includedir"; then
+	for i in $arg_pgsql $prefix /usr; do
+		for j in $i/bin $i; do
+			AC_PATH_PROG(PG_CONFIG, pg_config, "", "$j")
+			if test ! -z "$PG_CONFIG"; then
+				pg_includedir="`$PG_CONFIG --includedir-server`"
+				pg_libdir="`$PG_CONFIG --pkglibdir`"
+				j_ok="1";
+				break;
+			else
+				j_ok="0";
+			fi
+		done
+		if test "$j_ok" == "1"; then
 			break;
-		else
-			pginclude_ok="0";
-			AC_MSG_RESULT([no]);
 		fi
 	done
-	if [ test "$pginclude_ok" == "1" ]; then
-		break;
-	fi
-done
+fi
 
+if test ! -z "$pg_includedir"; then
+	CPPFLAGS="$CPPFLAGS -I$pg_includedir"
+fi
 AC_CHECK_HEADERS([postgres.h],
 				 [],
 				 [AC_MSG_FAILURE([Cannot find PostgreSQL header files!
@@ -70,8 +81,7 @@ AC_MSG_RESULT([$enable_opte])
 
 
 # Setting directories
-AC_SUBST(libdir,$pgdir/lib/plugins)
-AC_SUBST(pgdir,$pgdir/)
+AC_SUBST(libdir,"$pg_libdir/plugins")
 
 # 
 AC_CONFIG_FILES([
