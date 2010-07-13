@@ -149,11 +149,11 @@ show_ljqo_about(void)
 	ljqo_optimizer *opt = optimizers;
 	StringInfoData result;
 	const char *intro =
-		"This is the "PACKAGE_NAME", version "PACKAGE_VERSION"!\n\n"
+		PACKAGE_NAME", version "PACKAGE_VERSION".\n\n"
 		"Settings:\n"
-		"  set ljqo_threshold = N;    - Trigger ljqo algorithm when the number of\n"
-		"                               relations is great or equal to N.\n"
-		"  set ljqo_algorithm = name; - Name of algorithm to call.\n\n"
+		"  ljqo_threshold = N;    - Trigger ljqo algorithm when the number of\n"
+		"                           relations is great or equal to N.\n"
+		"  ljqo_algorithm = name; - Name of algorithm to call.\n\n"
 		"List of available algorithms:\n";
 
 	initStringInfo(&result);
@@ -174,7 +174,7 @@ _PG_init(void)
 {
 	ljqo_optimizer *opt = optimizers;
 
-	elog(NOTICE,"This is the "PACKAGE_NAME"! "
+	elog(NOTICE,PACKAGE_NAME". "
 			"Please type 'show ljqo_about;' for more information.");
 
 	DefineCustomStringVariable("ljqo_about",
