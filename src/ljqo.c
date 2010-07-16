@@ -1,7 +1,7 @@
 /*
  * ljqo.c
  *
- *   Plugin interface with PostgreSQL and control structure for all
+ *   Interface of LJQO Plugin with PostgreSQL and control structures for all
  *   optimizers.
  *
  * Copyright (C) 2009-2010, Adriano Lange
@@ -37,8 +37,10 @@
 #include "opte.h"
 #include "twopo.h"
 
-///////////////////////////////////////////////////////////////////////////
-/////////////////////////////// Defaults //////////////////////////////////
+/*
+ * ========================================================================
+ * ======================== Default Values ================================
+ */
 
 #define DEFAULT_LJQO_THRESHOLD          12
 #define     MIN_LJQO_THRESHOLD          2
@@ -51,13 +53,16 @@
 #	define DEFAULT_LJQO_ALGORITHM_STR  "geqo"
 #endif
 
-///////////////////////////////////////////////////////////////////////////
-//////////////////// Optimizers' Control Structure ////////////////////////
+/*
+ * ========================================================================
+ * ====================== Control Structures ==============================
+ */
 
 typedef void (*ljqo_register_optimizer) (void);
 typedef void (*ljqo_unregister_optimizer) (void);
 
-typedef struct ljqo_optimizer {
+typedef struct ljqo_optimizer
+{
 	const char                *name;
 	const char                *description;
 	join_search_hook_type      search_f;
@@ -70,6 +75,9 @@ static join_search_hook_type   ljqo_algorithm = DEFAULT_LJQO_ALGORITHM;
 static char                   *ljqo_algorithm_str = DEFAULT_LJQO_ALGORITHM_STR;
 static char                   *ljqo_about_str = "";
 
+/*
+ * List of registred algorithms
+ */
 static ljqo_optimizer optimizers[] =
 {
 	{"geqo","Genetic Query Optimization (compatibility only)",geqo,NULL,NULL},
@@ -79,14 +87,21 @@ static ljqo_optimizer optimizers[] =
 	{ NULL, NULL, NULL, NULL, NULL }
 };
 
-///////////////////////////////////////////////////////////////////////////
-///////////////////////// Control Functions ///////////////////////////////
+
+/*
+ * ========================================================================
+ * ====================== Control Functions ===============================
+ */
 
 PG_MODULE_MAGIC;
 
 void	_PG_init(void);
 void	_PG_fini(void);
 
+/*
+ * Join order algorithm selector.
+ * This functions is registred in PostreSQL as join_search_hook.
+ */
 static
 RelOptInfo *
 ljqo_selector(PlannerInfo *root, int levels_needed, List *initial_rels)
@@ -99,18 +114,23 @@ ljqo_selector(PlannerInfo *root, int levels_needed, List *initial_rels)
 	OPTE_PRINT_NUMRELS( levels_needed );
 	OPTE_PRINT_INITIALRELS( root, initial_rels );
 
-	if( levels_needed < ljqo_threshold ) {
-
+	if( levels_needed < ljqo_threshold ) /*num of baserels below the threshold*/
+	{
+		/* call standard dynamic programming */
 		OPTE_PRINT_OPTNAME( "standard" );
 		result = standard_join_search(root, levels_needed, initial_rels);
 
-	} else if ( ljqo_algorithm != NULL ) {
-
+	}
+	else if ( ljqo_algorithm != NULL ) /* num of baserels above the threshold */
+	{
+		/* call algorithm registred in ljqo_algorithm */
 		OPTE_PRINT_OPTNAME( ljqo_algorithm_str );
 		result = ljqo_algorithm(root, levels_needed, initial_rels );
 
-	} else { // exception
-
+	}
+	else /* exception */
+	{
+		/* call geqo algorithm */
 		OPTE_PRINT_OPTNAME( "geqo" );
 		elog(WARNING, PACKAGE_NAME" is loaded but no optimizer is defined. "
 				"Please set ljqo_algorithm. Calling GEQO...");
@@ -124,16 +144,22 @@ ljqo_selector(PlannerInfo *root, int levels_needed, List *initial_rels)
 	return result;
 }
 
+/*
+ * Assign a algorithm registred in struct ljqo_optimizer.
+ * This function is used by ljqo_algorithm GUC parameter.
+ */
 static const char *
 assign_ljqo_algorithm(const char *newval, bool doit, GucSource source)
 {
 	ljqo_optimizer *opt = optimizers;
 
-	while( opt->name != NULL ){
-		if( strcmp(opt->name, newval) == 0 ){
-			if( doit ) {
+	while( opt->name != NULL )
+	{
+		if( strcmp(opt->name, newval) == 0 )
+		{
+			if( doit )
 				ljqo_algorithm = opt->search_f;
-			}
+
 			return newval;
 		}
 
@@ -143,6 +169,12 @@ assign_ljqo_algorithm(const char *newval, bool doit, GucSource source)
 	return NULL;
 }
 
+/*
+ * Show informations about the plugin.
+ *
+ * Example (in psql):
+ *  database=# show ljqo_about;
+ */
 static const char *
 show_ljqo_about(void)
 {
@@ -159,7 +191,8 @@ show_ljqo_about(void)
 	initStringInfo(&result);
 	appendStringInfoString(&result,intro);
 
-	while( opt->name != NULL ) {
+	while( opt->name != NULL )
+	{
 		appendStringInfo(&result,"  %10s   - %s\n",opt->name,opt->description);
 		opt++;
 	}
@@ -169,6 +202,11 @@ show_ljqo_about(void)
 	return (const char*)result.data;
 }
 
+/*
+ * When the plugin is loaded:
+ *  - Register GUC variables in PostgreSQL;
+ *  - Set join_search_hook as ljqo_selector.
+ */
 void
 _PG_init(void)
 {
@@ -180,7 +218,7 @@ _PG_init(void)
 	DefineCustomStringVariable("ljqo_about",
 							"About "PACKAGE_NAME,
 							"About "PACKAGE_NAME".",
-							&ljqo_about_str, // only to prevent seg. fault
+							&ljqo_about_str, /* only to prevent seg. fault */
 #							if POSTGRES_8_4
 							"",
 #							endif
@@ -221,7 +259,11 @@ _PG_init(void)
 							assign_ljqo_algorithm,
 							NULL);
 
-	while( opt->name != NULL ){
+	/*
+	 * Call register function of each algorithm.
+	 */
+	while( opt->name != NULL )
+	{
 		if( opt->register_f )
 			opt->register_f();
 
@@ -233,6 +275,9 @@ _PG_init(void)
 	join_search_hook = ljqo_selector;
 }
 
+/*
+ * Unregister plugin.
+ */
 void
 _PG_fini(void)
 {
@@ -240,7 +285,8 @@ _PG_fini(void)
 
 	join_search_hook = NULL;
 
-	while( opt->name != NULL ){
+	while( opt->name != NULL )
+	{
 		if( opt->unregister_f )
 			opt->unregister_f();
 

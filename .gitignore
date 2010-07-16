@@ -6,3 +6,4 @@ Makefile
 .deps
 *~
 autom4te.cache
+include/ljqo_config.h*
