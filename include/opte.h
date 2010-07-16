@@ -52,7 +52,7 @@ extern void  opteUnregisterGuc(void);
 #define      OPTE_UNREGISTER opteUnregisterGuc()
 #define      OPTE_LJQO_NOTE "\n" \
              "NOTE: Optimizer Evaluation (OptE) is enabled.\n" \
-             "      You can learn more aboute it typing 'show opte_about;'."
+             "      You can learn more about it typing 'show opte_about;'."
 
 
 
@@ -85,7 +85,7 @@ extern void    opteConvergence( opteData *opte, Cost generated_cost );
 #define OPTE_CONVERG( opte_ptr, generated_cost ) \
 	opteConvergence( opte_ptr, generated_cost )
 
-#else  // #if ENABLE_OPTE
+#else  /* if ENABLE_OPTE is not defined */
 
 #define OPTE_REGISTER
 #define OPTE_UNREGISTER
@@ -101,6 +101,6 @@ extern void    opteConvergence( opteData *opte, Cost generated_cost );
 #define OPTE_PRINT_OPTCHEAPEST( cost )
 #define OPTE_CONVERG( opte_ptr, generated_cost )
 
-#endif // #if ENABLE_OPTE
+#endif
 
 #endif   /* OPTE_H */

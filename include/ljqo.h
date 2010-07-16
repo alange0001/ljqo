@@ -1,7 +1,7 @@
 /*
  * ljqo.h
  *
- *   Plugin interface with PostgreSQL and control structure for all
+ *   Interface of LJQO Plugin with PostgreSQL and control structures for all
  *   optimizers.
  *
  * Copyright (C) 2009-2010, Adriano Lange
@@ -36,7 +36,7 @@
 #	define POSTGRES_8_3 1
 #elif PG_VERSION_NUM/100 == 804
 #	define POSTGRES_8_4 1
-#else // exception
+#else /* exception */
 #	error "PostgreSQL version not supported!"
 #endif
 
