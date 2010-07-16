@@ -104,11 +104,11 @@ opteRegisterGuc(void)
 							"About OptE",
 							"About Optimizer Evaluation (OptE).",
 							&opte_about_str, // only to prevent seg. fault
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							"",
 #							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
 #							endif
 							NULL,
@@ -118,11 +118,11 @@ opteRegisterGuc(void)
 							"Show OptE",
 							"Show informations about optimizers.",
 							&opte_show,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_OPTE_SHOW,
 #							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
 #							endif
 							NULL,
@@ -131,11 +131,11 @@ opteRegisterGuc(void)
 							"OptE Convergence",
 							"Show optimizer's convergence.",
 							&opte_show_convergence,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_OPTE_SHOW_CONVERGENCE,
 #							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
 #							endif
 							NULL,
@@ -144,11 +144,11 @@ opteRegisterGuc(void)
 							"OptE Sampling",
 							"Show optimizer's sampling.",
 							&opte_show_sampling,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_OPTE_SHOW_SAMPLING,
 #							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
 #							endif
 							NULL,
@@ -157,11 +157,11 @@ opteRegisterGuc(void)
 							"GEQO's pool",
 							"Show GEQO's pool evolution.",
 							&opte_show_geqo_pools,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_OPTE_SHOW_GEQO_POOLS,
 #							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
 #							endif
 							NULL,
@@ -170,11 +170,11 @@ opteRegisterGuc(void)
 							"OptE output",
 							"Output file for OptE.",
 							&opte_output_str,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_OPTE_OUTPUT_STR,
 #							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
 #							endif
 							assign_opte_output,

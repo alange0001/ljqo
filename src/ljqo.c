@@ -219,11 +219,11 @@ _PG_init(void)
 							"About "PACKAGE_NAME,
 							"About "PACKAGE_NAME".",
 							&ljqo_about_str, /* only to prevent seg. fault */
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							"",
 #							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
 #							endif
 							NULL,
@@ -233,13 +233,13 @@ _PG_init(void)
 							"LJQO Threshold",
 							"LJQO Threshold.",
 							&ljqo_threshold,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_LJQO_THRESHOLD,
 #							endif
 							MIN_LJQO_THRESHOLD,
 							MAX_LJQO_THRESHOLD,
 							PGC_USERSET,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
 #							endif
 							NULL,
@@ -249,11 +249,11 @@ _PG_init(void)
 							"LJQO Algorithm",
 							"Defines the algorithm used by "PACKAGE_NAME".",
 							&ljqo_algorithm_str,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_LJQO_ALGORITHM_STR,
 #							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4
+#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
 #							endif
 							assign_ljqo_algorithm,
