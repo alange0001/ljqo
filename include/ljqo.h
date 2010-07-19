@@ -32,12 +32,14 @@
 #include <postgres.h>
 #include "ljqo_config.h"
 
-#if PG_VERSION_NUM/100 == 803
+#if PG_VERSION_NUM/100 == 803   /* support tested for 8.3 */
 #	define POSTGRES_8_3 1
-#elif PG_VERSION_NUM/100 == 804
+#elif PG_VERSION_NUM/100 == 804 /* support tested for 8.4 */
 #	define POSTGRES_8_4 1
+#elif PG_VERSION_NUM/100 == 900 /*experimental support for 9.0*/
+#	define POSTGRES_9_0 1
 #else /* exception */
-#	error "PostgreSQL version not supported!"
+#	error "PostgreSQL version is not supported!"
 #endif
 
 #endif /* LJQO_H_ */
