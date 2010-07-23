@@ -38,9 +38,9 @@ static const char*
 show_twopo_about(void)
 {
 	return
-	"Two-Phase Optimizer (TwoPO)\n\n"
+	"Two-Phase Optimization (TwoPO)\n\n"
 	"Settings:\n"
-	"  twopo_bushy_space = {true|false}       - set it to false if you want only left-deep trees\n"
+	"  twopo_bushy_space = {true|false}       - set it to false if you want only deep-trees\n"
 	"                                           default=true\n"
 	"  twopo_heuristic_states = {true|false}  - enables heuristic to initial states\n"
 	"                                           default=true\n"
