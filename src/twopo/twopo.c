@@ -9,6 +9,11 @@
  *   [2] P. Guttoski, M. Sunye, and F. Silva, "Kruskal's algorithm for query
  *       tree optimization," in Database Engineering and Applications Symposium,
  *       2007. IDEAS 2007. 11th International, Sept. 2007, pp. 296–302.
+ *   [3] Arun Swami e Anoop Gupta. Optimization of large join queries.
+ *       SIGMOD '88: Proceedings of the 1988 ACM SIGMOD international conference
+ *       on Management of data, pages 8-17, New York, NY, USA, 1988. ACM.
+ *   [4] Florian Waas e Arjan Pellenkoft. Join order selection - good enough is
+ *       easy. BNCOD, pages 51-67, 2000.
  *
  *   All adaptations and design decisions were made by Adriano Lange.
  *
@@ -137,7 +142,7 @@ typedef struct twopoEssentials {
  *   Abstraction of search space.
  *   Usado para a construção de planos.
  *
- *   Para left-deep trees, apenas uma lista de relações base:
+ *   Para (left-)deep-trees, apenas uma lista de relações base:
  *      0, 1, 2, 4 ...
  *
  *   Para bushy-trees, uma lista de operadores de junção:
@@ -253,7 +258,8 @@ resetTemporaryContext( twopoEssentials *essentials )
 
 #	ifdef TWOPO_CACHE_PLANS
 	/*
-	 * Cleaning parent nodes in nodeList deleted by MemoryContextResetAndDeleteChildren()
+	 * Cleaning parent nodes in nodeList deleted by
+	 * MemoryContextResetAndDeleteChildren()
 	 */
 	for( i=0; i<essentials->numNodes; i++ ){
 		essentials->nodeList[i].parents = NULL;
@@ -1095,7 +1101,7 @@ neighbordStateLeftDeep(State *output, State *input, bool *fail)
 	output = copyState(output,input);
 
 	*fail = true;
-	if( input->size == 2 || random()%2 ){ ///// swap method ////
+	if( input->size == 2 || random()%2 ){ ///// swap method [3] ////
 		idx = random()%(input->size -1);
 		if(canRelPushedDown(output->elementList[idx+1].rel, idx, output)){
 			swapValues(int,
@@ -1103,7 +1109,7 @@ neighbordStateLeftDeep(State *output, State *input, bool *fail)
 					output->elementList[idx+1].rel);
 			*fail = false;
 		}
-	} else { ///////////////////////////////// 3-cycle method //
+	} else { ///////////////////////////////// 3-cycle method [3] //
 		idx = random()%(input->size -2);
 		if(canRelPushedDown(output->elementList[idx+2].rel, idx, output)){
 			swapValues(int,
