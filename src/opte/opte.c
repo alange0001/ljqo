@@ -75,16 +75,20 @@ show_opte_about(void)
 static const char *
 assign_opte_output(const char *newval, bool doit, GucSource source)
 {
-	if( !strcmp(newval, "") || !strcmp(newval, DEFAULT_OPTE_OUTPUT_STR) ){
-		if( doit ) {
+	if( !strcmp(newval, "") || !strcmp(newval, DEFAULT_OPTE_OUTPUT_STR) )
+	{
+		if( doit )
 			opte_output_file = DEFAULT_OPTE_OUTPUT;
-		}
 		return DEFAULT_OPTE_OUTPUT_STR;
-	} else {
-		if( doit ) {
+	}
+	else
+	{
+		if( doit )
+		{
 			FILE *new_file;
 			new_file = fopen( newval, "a" );
-			if( !new_file ){
+			if( !new_file )
+			{
 				elog(WARNING, "OptE cannot open file '%s'.", newval);
 				return NULL;
 			}
@@ -190,7 +194,8 @@ opteRegisterGuc(void)
 void
 opteUnregisterGuc(void)
 {
-	if( opte_output_file != NULL && opte_output_file != DEFAULT_OPTE_OUTPUT ) {
+	if( opte_output_file != NULL && opte_output_file != DEFAULT_OPTE_OUTPUT )
+	{
 		fclose( opte_output_file );
 		opte_output_file = DEFAULT_OPTE_OUTPUT;
 	}
@@ -212,14 +217,16 @@ alloc_vsprintf(const char* str, va_list va)
     if( !str )
         return NULL;
 
-    for(;;){
+    for(;;)
+	{
         str_value = (char*) palloc( sizeof(char) * (len+1) );
 
         print_return = vsnprintf(str_value, len, str, va);
 
-        if( print_return >= 0 && print_return <= len - 1 ) {
+        if( print_return >= 0 && print_return <= len - 1 )
             break;
-        } else {
+        else
+		{
             pfree(str_value);
             len *= 2;
         }
@@ -265,7 +272,9 @@ opte_printf(const char* value,...)
     	return;
 
 	str_1 = alloc_sprintf("OptEval: %s", value);
-	if( str_1 ) {
+
+	if( str_1 )
+	{
 		va_start(va, value);
 		str_2 = alloc_vsprintf(str_1, va);
 		va_end(va);
@@ -273,7 +282,9 @@ opte_printf(const char* value,...)
 
 	if ( str_1 )
 		pfree(str_1);
-	if ( str_2 ){
+
+	if ( str_2 )
+	{
 		fprintf(opte_output_file, "%s\n", str_2);
 		pfree(str_2);
 	}
@@ -315,11 +326,11 @@ opte_print_initial_rels(PlannerInfo *root, List *initial_rels)
 
 		if( str.len )
 			appendStringInfoString(&str, ", ");
-		if( count > 1 ){
+
+		if( count > 1 )
 			appendStringInfo(&str, "(%s)", str2.data);
-		} else {
+		else
 			appendStringInfo(&str, "%s", str2.data);
-		}
 	}
 
 	fprintf(opte_output_file, "OptEval: Initial Rels: %s\n", str.data);
@@ -357,10 +368,12 @@ getOpteByPlannerInfo(PlannerInfo *planner_info)
 {
 	ListCell *x;
 
-	if( opte_list ) {
+	if( opte_list )
+	{
 		Assert( planner_info != NULL );
 
-		foreach(x, opte_list){
+		foreach(x, opte_list)
+		{
 			opteData *opte = (opteData*)lfirst(x);
 			if( opte->planner_info == planner_info )
 				return opte;
@@ -398,7 +411,8 @@ opteConvergence( opteData *opte, Cost generated_cost )
 	if ( opte_show_sampling )
 		opte_printf("Sample:%d %.2f", opte->plan_count, generated_cost);
 
-	if( opte->plan_min_cost <= 0 || opte->plan_min_cost > generated_cost ) {
+	if( opte->plan_min_cost <= 0 || opte->plan_min_cost > generated_cost )
+	{
 
 		opte->plan_min_cost = generated_cost;
 
@@ -424,7 +438,8 @@ optePrintGEQOPool( int generation, Pool *pool )
 	if ( !opte_show_geqo_pools )
 		return;
 
-	for( i=0; i<pool->size; i++){
+	for( i=0; i<pool->size; i++)
+	{
 		opte_printf("GEQO Pool:%d %d %.2f", generation, i, pool->data[i].worth);
 	}
 }
