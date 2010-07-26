@@ -7,3 +7,5 @@ Makefile
 *~
 autom4te.cache
 include/ljqo_config.h*
+config.log
+config.status
