@@ -41,7 +41,8 @@ resizeBuffer(twopoList *list, size_t buffersize)
 	else
 		new_buffer = palloc(buffersize * list->elementsize);
 
-	if( list->size ){
+	if( list->size )
+	{
 		Assert( list->buffer != NULL );
 		memcpy(new_buffer, list->buffer, list->elementsize * list->size);
 		pfree(list->buffer);
@@ -58,18 +59,16 @@ listCreate(size_t elementsize, size_t initialbuffersize, MemoryContext context)
 
 	Assert( elementsize > 0 );
 
-	if( context ){
+	if( context )
 		result = (twopoList*)MemoryContextAllocZero(context, sizeof(twopoList));
-	} else {
+	else
 		result = (twopoList*)palloc0(sizeof(twopoList));
-	}
 
 	result->elementsize = elementsize;
 	result->context = context;
 
-	if( initialbuffersize ){
+	if( initialbuffersize )
 		resizeBuffer( result, initialbuffersize );
-	}
 
 	return result;
 }
@@ -80,7 +79,8 @@ listDestroy(twopoList *list)
 	if( ! list )
 		return;
 
-	if( list->buffersize ) {
+	if( list->buffersize )
+	{
 		Assert( list->buffer != NULL );
 		pfree( list->buffer );
 	}
@@ -131,10 +131,9 @@ listGetElement(void *dest, twopoList *list, size_t index)
 	Assert( list != NULL );
 	Assert( index >= 0 && index < list->size );
 
-	memcpy(
-			dest,
-			list->buffer + (index * list->elementsize),
-			list->elementsize );
+	memcpy(dest,
+	       list->buffer + (index * list->elementsize),
+	       list->elementsize );
 }
 
 void
@@ -145,14 +144,12 @@ listAdd(twopoList *list, void *value_ptr)
 
 	if( ! list->buffersize )
 		resizeBuffer(list, DEFAULT_BUFFER_SIZE);
-	else if( list->size >= list->buffersize ){
+	else if( list->size >= list->buffersize )
 		resizeBuffer(list, list->size * 2);
-	}
 
-	memcpy(
-			list->buffer + (list->size * list->elementsize),
-			value_ptr,
-			list->elementsize);
+	memcpy(list->buffer + (list->size * list->elementsize),
+	       value_ptr,
+	       list->elementsize);
 
 	list->size++;
 }
@@ -162,17 +159,17 @@ listCopy(twopoList *dest, twopoList *src)
 {
 	Assert( src != NULL );
 
-	if( !dest ){
+	if( !dest )
 		dest = listCreate(src->elementsize, src->size, src->context);
-	} else {
+	else
+	{
 		Assert( dest->elementsize == src->elementsize );
 		if( dest->buffersize < src->size )
 			resizeBuffer(dest,src->size);
 	}
 
-	if( src->size ){
+	if( src->size )
 		memcpy(dest->buffer, src->buffer, src->size * src->elementsize);
-	}
 
 	return dest;
 }
