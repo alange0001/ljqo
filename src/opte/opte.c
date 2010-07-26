@@ -53,12 +53,12 @@ static char  *opte_output_str       = DEFAULT_OPTE_OUTPUT_STR;
 
 static List  *opte_list             = NULL;
 
-//////////////////////////////////////////////////////////////////////////////
+/* ////////////////////////////////////////////////////////////////////////// */
 static float opteGetTime( opteData *opte );
 static void optePrintGEQOPool( int generation, Pool *pool );
 
-//////////////////////////////////////////////////////////////////////////////
-//////////////////////////// Guc Functions ///////////////////////////////////
+/* ////////////////////////////////////////////////////////////////////////// */
+/* ///////////////////////// Guc Functions ////////////////////////////////// */
 static const char *
 show_opte_about(void)
 {
@@ -68,7 +68,7 @@ show_opte_about(void)
 	"Settings:\n"
 	"  set opte_show = {true|false};      - Enables (or don't) OptE output.\n"
 	"  set opte_show_convergence = true;  - Optimizers' convergence.\n"
-	//"  set opte_show_geqo_pools = true;"
+	/*"  set opte_show_geqo_pools = true;"*/
 	;
 }
 
@@ -98,12 +98,12 @@ assign_opte_output(const char *newval, bool doit, GucSource source)
 void
 opteRegisterGuc(void)
 {
-	opte_output_file = DEFAULT_OPTE_OUTPUT; // stderr is not a constant
+	opte_output_file = DEFAULT_OPTE_OUTPUT; /* stderr is not a constant */
 
 	DefineCustomStringVariable("opte_about",
 							"About OptE",
 							"About Optimizer Evaluation (OptE).",
-							&opte_about_str, // only to prevent seg. fault
+							&opte_about_str, /* only to prevent seg. fault */
 #							if POSTGRES_8_4 || POSTGRES_9_0
 							"",
 #							endif
@@ -201,7 +201,7 @@ opteUnregisterGuc(void)
 #	endif
 }
 
-//////////////////////////////////////////////////////////////////////////////
+/* ////////////////////////////////////////////////////////////////////////// */
 static char*
 alloc_vsprintf(const char* str, va_list va)
 {
