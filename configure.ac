@@ -3,7 +3,7 @@
 
 AC_PREREQ(2.61)
 AC_INIT([LJQO Plugin], [0.1], [alange0001@gmail.com])
-AC_COPYRIGHT([Copyright 2009, Adriano Lange])
+AC_COPYRIGHT([Copyright 2009-2010, Adriano Lange])
 AM_INIT_AUTOMAKE()
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_HEADER([include/ljqo_config.h])
@@ -81,7 +81,7 @@ AC_MSG_RESULT([$enable_opte])
 
 
 # Setting directories
-AC_SUBST(libdir,"$pg_libdir/plugins")
+AC_SUBST(libdir,"$pg_libdir")
 
 # 
 AC_CONFIG_FILES([
