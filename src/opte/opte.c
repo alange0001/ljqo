@@ -116,49 +116,6 @@ opteUnregisterGuc(void)
 }
 
 /* ////////////////////////////////////////////////////////////////////////// */
-static char*
-alloc_vsprintf(const char* str, va_list va)
-{
-    char   *str_value;
-    int     len = 100;
-    int     print_return;
-
-    if( !str )
-        return NULL;
-
-    for(;;)
-	{
-        str_value = (char*) palloc( sizeof(char) * (len+1) );
-
-        print_return = vsnprintf(str_value, len, str, va);
-
-        if( print_return >= 0 && print_return <= len - 1 )
-            break;
-        else
-		{
-            pfree(str_value);
-            len *= 2;
-        }
-    }
-
-    return str_value;
-}
-
-static char*
-alloc_sprintf(const char* value,...)
-{
-    char    *str_value;
-    va_list  va;
-
-    if( !value )
-        return NULL;
-
-    va_start(va, value);
-    str_value = alloc_vsprintf(value, va);
-    va_end(va);
-
-    return str_value;
-}
 
 static const char*
 get_relation_name(PlannerInfo *root, int relid)
@@ -213,7 +170,7 @@ opte_print_initial_rels(PlannerInfo *root, List *initial_rels)
 			appendStringInfo(&str, "%s", str2.data);
 	}
 
-	opte_printf("Initial Rels: %s\n", str.data);
+	opte_printf("Initial Rels: %s", str.data);
 }
 
 void
