@@ -88,6 +88,7 @@ AC_CONFIG_FILES([
 	Makefile
 	include/Makefile
 	src/Makefile
+	src/sdp/Makefile
 	src/twopo/Makefile
 	src/opte/Makefile
 ])

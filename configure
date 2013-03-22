@@ -11659,7 +11659,7 @@ libdir="$pg_libdir"
 
 
 #
-ac_config_files="$ac_config_files Makefile include/Makefile src/Makefile src/twopo/Makefile src/opte/Makefile"
+ac_config_files="$ac_config_files Makefile include/Makefile src/Makefile src/sdp/Makefile src/twopo/Makefile src/opte/Makefile"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -12673,6 +12673,7 @@ do
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "include/Makefile") CONFIG_FILES="$CONFIG_FILES include/Makefile" ;;
     "src/Makefile") CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
+    "src/sdp/Makefile") CONFIG_FILES="$CONFIG_FILES src/sdp/Makefile" ;;
     "src/twopo/Makefile") CONFIG_FILES="$CONFIG_FILES src/twopo/Makefile" ;;
     "src/opte/Makefile") CONFIG_FILES="$CONFIG_FILES src/opte/Makefile" ;;
 

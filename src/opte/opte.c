@@ -57,9 +57,9 @@ show_opte_about(void)
 {
 	return
 	"Optimizer Evaluation (OptE) provides a control structure for optimizer\n"
-	"evaluation. The output of OptE are sent to PostgreSQL's log file.\n\n"
+	"evaluation. The output of OptE are sent to DEBUG1.\n\n"
 	"Settings:\n"
-	"  set opte_show = {true|false};      - Enables (or don't) OptE output.\n"
+	"  set opte_show = {true|false};      - OptE output.\n"
 	"  set opte_show_convergence = true;  - Optimizers' convergence.\n"
 	;
 }

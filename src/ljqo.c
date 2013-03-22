@@ -35,6 +35,7 @@
 #include <limits.h>
 
 #include "opte.h"
+#include "sdp.h"
 #include "twopo.h"
 
 /*
@@ -45,9 +46,9 @@
 #define DEFAULT_LJQO_THRESHOLD          12
 #define     MIN_LJQO_THRESHOLD          2
 #define     MAX_LJQO_THRESHOLD          INT_MAX
-#ifdef REGISTER_TWOPO
-#	define DEFAULT_LJQO_ALGORITHM       twopo
-#	define DEFAULT_LJQO_ALGORITHM_STR  "twopo"
+#ifdef REGISTER_SDP
+#	define DEFAULT_LJQO_ALGORITHM       sdp
+#	define DEFAULT_LJQO_ALGORITHM_STR  "sdp"
 #else
 #	define DEFAULT_LJQO_ALGORITHM       geqo
 #	define DEFAULT_LJQO_ALGORITHM_STR  "geqo"
@@ -81,6 +82,9 @@ static char                   *ljqo_about_str = "";
 static ljqo_optimizer optimizers[] =
 {
 	{"geqo","Genetic Query Optimization (compatibility only)",geqo,NULL,NULL},
+#	ifdef REGISTER_SDP
+	REGISTER_SDP,
+#	endif
 #	ifdef REGISTER_TWOPO
 	REGISTER_TWOPO,
 #	endif

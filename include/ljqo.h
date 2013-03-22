@@ -35,7 +35,7 @@
 #if PG_VERSION_NUM/100 == 902 /* support for 9.2 */
 #	define POSTGRES_9 1
 #else /* exception */
-#	error "Not supported PostgreSQL version!"
+#	error "The specified PostgreSQL is not supported!"
 #endif
 
 #undef PACKAGE_BUGREPORT

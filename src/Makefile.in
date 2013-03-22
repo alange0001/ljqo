@@ -73,7 +73,7 @@ am__uninstall_files_from_dir = { \
   }
 am__installdirs = "$(DESTDIR)$(libdir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
-libljqo_la_DEPENDENCIES = twopo/libtwopo.la @LIBOBJS@
+libljqo_la_DEPENDENCIES = sdp/libsdp.la twopo/libtwopo.la @LIBOBJS@
 am_libljqo_la_OBJECTS = ljqo.lo
 libljqo_la_OBJECTS = $(am_libljqo_la_OBJECTS)
 libljqo_la_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
@@ -251,11 +251,11 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = twopo @OPTE_SUBDIR@
+SUBDIRS = sdp twopo @OPTE_SUBDIR@
 INCLUDES = -I$(top_srcdir)/include
 lib_LTLIBRARIES = libljqo.la
 libljqo_la_SOURCES = ljqo.c
-libljqo_la_LIBADD = twopo/libtwopo.la @OPTE_OBJ@ @LIBOBJS@
+libljqo_la_LIBADD = sdp/libsdp.la twopo/libtwopo.la @OPTE_OBJ@ @LIBOBJS@
 libljqo_la_LDFLAGS = -version-info 0:0:0 -module
 all: all-recursive
 
