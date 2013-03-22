@@ -18,7 +18,7 @@
  *   All adaptations and design decisions were made by Adriano Lange.
  *
  *
- * Copyright (C) 2009-2010, Adriano Lange
+ * Copyright (C) 2009-2013, Adriano Lange
  *
  * This file is part of LJQO Plugin.
  *

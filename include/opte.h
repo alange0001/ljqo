@@ -4,7 +4,7 @@
  *   Optimizer Evaluation (OptE) retains informations and control
  *   structures needed to evaluate the implemented optimizers.
  *
- * Copyright (C) 2009-2010, Adriano Lange
+ * Copyright (C) 2009-2013, Adriano Lange
  *
  * This file is part of LJQO Plugin.
  *

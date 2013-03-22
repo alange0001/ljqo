@@ -4,7 +4,7 @@
  *   Register TwoPO algorithm on PostgreSQL.
  *
  *
- * Copyright (C) 2009-2010, Adriano Lange
+ * Copyright (C) 2009-2013, Adriano Lange
  *
  * This file is part of LJQO Plugin.
  *
