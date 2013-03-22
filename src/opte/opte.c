@@ -1,7 +1,7 @@
 /*
  * opte.c
  *
- *   Optimizer Evaluation (OptE) retains informations and control
+ *   Optimizer Evaluation (OptE) retains information and control
  *   structures needed to evaluate the implemented optimizers.
  *
  * Copyright (C) 2009-2013, Adriano Lange
