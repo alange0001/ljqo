@@ -2,8 +2,8 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT([LJQO Plugin], [0.1], [alange0001@gmail.com])
-AC_COPYRIGHT([Copyright 2009-2010, Adriano Lange])
+AC_INIT([LJQO Plugin], [0.2], [alange0001@gmail.com])
+AC_COPYRIGHT([Copyright 2009-2013, Adriano Lange])
 AM_INIT_AUTOMAKE()
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_HEADER([include/ljqo_config.h])

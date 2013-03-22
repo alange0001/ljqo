@@ -89,7 +89,7 @@ int    twopo_cache_size                = DEFAULT_TWOPO_CACHE_SIZE;
 /**
  * treeNode:
  *    Optimizer's main struct.
- *    Represent either a base relation or a binary join operation.
+ *    Represents either a base relation or a binary join operation.
  *    It has cache support (see joinNodes()).
  */
 typedef struct treeNode {
@@ -1247,7 +1247,7 @@ createEdges(twopoEssentials *essentials)
 	pfree(has_adj);
 
 #	if ENABLE_OPTE
-	opte_printf("Number of Edges: %d", listSize(edgeList));
+	opte_printf("Number of Edges: %lu", listSize(edgeList));
 #	endif
 #	ifdef TWOPO_DEBUG
 	fprintf(stderr,"TwoPO DEBUG: edgeList: ");

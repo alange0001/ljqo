@@ -54,9 +54,8 @@ extern void  opteUnregisterGuc(void);
              "NOTE: Optimizer Evaluation (OptE) is enabled.\n" \
              "      You can learn more about it typing 'show opte_about;'."
 
+#define opte_printf(format,...) elog(DEBUG1, "OptEval: " format, ##__VA_ARGS__)
 
-
-extern void    opte_printf(const char* value,...);
 extern void    opte_print_initial_rels(PlannerInfo *root, List *initial_rels);
 extern void    opteInit( opteData *opte, PlannerInfo *planner_info );
 extern void    opteFinish( opteData* opte );

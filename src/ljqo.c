@@ -4,7 +4,7 @@
  *   Interface of LJQO Plugin with PostgreSQL and control structures for all
  *   optimizers.
  *
- * Copyright (C) 2009-2010, Adriano Lange
+ * Copyright (C) 2009-2013, Adriano Lange
  *
  * This file is part of LJQO Plugin.
  *
@@ -100,10 +100,9 @@ void	_PG_fini(void);
 
 /*
  * Join order algorithm selector.
- * This functions is registred in PostreSQL as join_search_hook.
+ * This functions is registered in PostreSQL as join_search_hook.
  */
-static
-RelOptInfo *
+static RelOptInfo *
 ljqo_selector(PlannerInfo *root, int levels_needed, List *initial_rels)
 {
 	OPTE_DECLARE( opte );
@@ -123,20 +122,15 @@ ljqo_selector(PlannerInfo *root, int levels_needed, List *initial_rels)
 	}
 	else if ( ljqo_algorithm != NULL ) /* num of baserels above the threshold */
 	{
-		/* call algorithm registred in ljqo_algorithm */
+		/* call algorithm registered in ljqo_algorithm */
 		OPTE_PRINT_OPTNAME( ljqo_algorithm_str );
 		result = ljqo_algorithm(root, levels_needed, initial_rels );
 
 	}
-	else /* exception */
-	{
-		/* call geqo algorithm */
-		OPTE_PRINT_OPTNAME( "geqo" );
-		elog(WARNING, PACKAGE_NAME" is loaded but no optimizer is defined. "
-				"Please set ljqo_algorithm. Calling GEQO...");
-		result = geqo(root, levels_needed, initial_rels);
-
-	}
+	else /* exception error */
+		elog(ERROR, PACKAGE_NAME" was loaded but there isn't any defined "
+				"query optimizer."
+				"Please set ljqo_algorithm.");
 
 	OPTE_PRINT_OPTCHEAPEST( result->cheapest_total_path->total_cost );
 	OPTE_FINISH( &opte );
@@ -145,28 +139,43 @@ ljqo_selector(PlannerInfo *root, int levels_needed, List *initial_rels)
 }
 
 /*
- * Assign a algorithm registred in struct ljqo_optimizer.
- * This function is used by ljqo_algorithm GUC parameter.
+ * check_ljqo_algorithm:
+ *    Validates ljqo_algorithm informed by the user.
+ *    This function is used by ljqo_algorithm GUC parameter.
  */
-static const char *
-assign_ljqo_algorithm(const char *newval, bool doit, GucSource source)
+static bool
+check_ljqo_algorithm(char **newval, void **extra, GucSource source)
+{
+	ljqo_optimizer *opt = optimizers;
+
+	while( opt->name != NULL )
+	{
+		if( strcmp(opt->name, *newval) == 0 )
+			return true;
+
+		opt++;
+	}
+
+	return false;
+}
+
+/*
+ * assign_ljqo_algorithm:
+ *    Assigns an algorithm registered in ljqo_optimizer.
+ *    This function is used by ljqo_algorithm GUC parameter.
+ */
+static void
+assign_ljqo_algorithm(const char *newval, void *extra)
 {
 	ljqo_optimizer *opt = optimizers;
 
 	while( opt->name != NULL )
 	{
 		if( strcmp(opt->name, newval) == 0 )
-		{
-			if( doit )
-				ljqo_algorithm = opt->search_f;
-
-			return newval;
-		}
+			ljqo_algorithm = opt->search_f;
 
 		opt++;
 	}
-
-	return NULL;
 }
 
 /*
@@ -183,9 +192,10 @@ show_ljqo_about(void)
 	const char *intro =
 		PACKAGE_NAME", version "PACKAGE_VERSION".\n\n"
 		"Settings:\n"
-		"  ljqo_threshold = N;    - Trigger ljqo algorithm when the number of\n"
-		"                           relations is great or equal to N.\n"
-		"  ljqo_algorithm = name; - Name of algorithm to call.\n\n"
+		"  ljqo_threshold = N;    - Call an LJQO algorithm when the number\n"
+		"                           of relations is greater than or equal to\n"
+		"                           N.\n"
+		"  ljqo_algorithm = name; - Algorithm to be called.\n\n"
 		"List of available algorithms:\n";
 
 	initStringInfo(&result);
@@ -213,19 +223,16 @@ _PG_init(void)
 	ljqo_optimizer *opt = optimizers;
 
 	elog(NOTICE,PACKAGE_NAME". "
-			"Please type 'show ljqo_about;' for more information.");
+			"Type 'show ljqo_about;' for more information.");
 
 	DefineCustomStringVariable("ljqo_about",
 							"About "PACKAGE_NAME,
 							"About "PACKAGE_NAME".",
 							&ljqo_about_str, /* only to prevent seg. fault */
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							"",
-#							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
-#							endif
+							NULL,
 							NULL,
 							show_ljqo_about);
 
@@ -233,15 +240,12 @@ _PG_init(void)
 							"LJQO Threshold",
 							"LJQO Threshold.",
 							&ljqo_threshold,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_LJQO_THRESHOLD,
-#							endif
 							MIN_LJQO_THRESHOLD,
 							MAX_LJQO_THRESHOLD,
 							PGC_USERSET,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
-#							endif
+							NULL,
 							NULL,
 							NULL);
 
@@ -249,13 +253,10 @@ _PG_init(void)
 							"LJQO Algorithm",
 							"Defines the algorithm used by "PACKAGE_NAME".",
 							&ljqo_algorithm_str,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_LJQO_ALGORITHM_STR,
-#							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
-#							endif
+							check_ljqo_algorithm,
 							assign_ljqo_algorithm,
 							NULL);
 

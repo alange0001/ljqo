@@ -4,7 +4,7 @@
  *   Interface of LJQO Plugin with PostgreSQL and control structures for all
  *   optimizers.
  *
- * Copyright (C) 2009-2010, Adriano Lange
+ * Copyright (C) 2009-2013, Adriano Lange
  *
  * This file is part of LJQO Plugin.
  *
@@ -29,17 +29,23 @@
 #ifndef LJQO_H_
 #define LJQO_H_
 
+#include <pg_config.h>
 #include <postgres.h>
+
+#if PG_VERSION_NUM/100 == 902 /* support for 9.2 */
+#	define POSTGRES_9 1
+#else /* exception */
+#	error "Not supported PostgreSQL version!"
+#endif
+
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_NAME
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+#undef PACKAGE_VERSION
+
 #include "ljqo_config.h"
 
-#if PG_VERSION_NUM/100 == 803   /* support tested for 8.3 */
-#	define POSTGRES_8_3 1
-#elif PG_VERSION_NUM/100 == 804 /* support tested for 8.4 */
-#	define POSTGRES_8_4 1
-#elif PG_VERSION_NUM/100 == 900 /*experimental support for 9.0*/
-#	define POSTGRES_9_0 1
-#else /* exception */
-#	error "PostgreSQL version is not supported!"
-#endif
+#define LJQO
 
 #endif /* LJQO_H_ */

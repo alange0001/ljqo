@@ -76,15 +76,16 @@ extern int    twopo_cache_size;  /* limit the size of temporary mem ctx (KB) */
 extern RelOptInfo *twopo(PlannerInfo *root,
 		int number_of_rels, List *initial_rels);
 
+#ifdef LJQO
 #define REGISTER_TWOPO \
 	{ \
 		"twopo", \
-		"Two-Phase Optimization", \
+		"Two-Phase Optimization (experimental)", \
 		twopo, \
 		twopo_register, \
 		NULL \
 	}
-
 extern void twopo_register(void);
+#endif
 
 #endif   /* TWOPO_H */

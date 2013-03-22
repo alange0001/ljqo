@@ -40,9 +40,9 @@ show_twopo_about(void)
 	return
 	"Two-Phase Optimization (TwoPO)\n\n"
 	"Settings:\n"
-	"  twopo_bushy_space = {true|false}       - set it to false if you want only deep-trees\n"
+	"  twopo_bushy_space = {true|false}       - set it to false if you want only deep trees\n"
 	"                                           default=true\n"
-	"  twopo_heuristic_states = {true|false}  - enables heuristic to initial states\n"
+	"  twopo_heuristic_states = {true|false}  - enables heuristic for initial states\n"
 	"                                           default=true\n"
 	"  twopo_ii_stop = Int                    - number of initial states\n"
 	"                                           default="R_STR(DEFAULT_TWOPO_II_STOP)"\n"
@@ -68,39 +68,30 @@ twopo_register(void)
 			"About TwoPO",
 			"",
 			&twopo_about_str,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			"",
-#			endif
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			show_twopo_about);
 	DefineCustomBoolVariable("twopo_bushy_space",
 			"TwoPO Bushy-tree Space",
 			"Search plans in bushy-tree space.",
 			&twopo_bushy_space,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_BUSHY_SPACE,
-#			endif
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 	DefineCustomBoolVariable("twopo_heuristic_states",
 			"TwoPO Heuristic States",
 			"Enables heuristic initial states.",
 			&twopo_heuristic_states,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_HEURISTIC_STATES,
-#			endif
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 	DefineCustomIntVariable("twopo_ii_stop",
@@ -108,86 +99,68 @@ twopo_register(void)
 			"Number of randomized initial states in Iterative "
 			"Improvement phase.",
 			&twopo_ii_stop,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_II_STOP,
-#			endif
 			MIN_TWOPO_II_STOP,
 			MAX_TWOPO_II_STOP,
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 	DefineCustomBoolVariable("twopo_ii_improve_states",
 			"TwoPO II Improve States",
 			"Enables improvement of plans in Iterative Improvement phase.",
 			&twopo_ii_improve_states,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_II_IMPROVE_STATES,
-#			endif
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 	DefineCustomBoolVariable("twopo_sa_phase",
 			"TwoPO SA Phase",
 			"Enables Simulated Annealing phase.",
 			&twopo_sa_phase,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_SA_PHASE,
-#			endif
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 	DefineCustomRealVariable("twopo_sa_initial_temperature",
 			"TwoPO SA Initial Temperature",
 			"Initial temperature in SA phase: Ti = X * cost(S0).",
 			&twopo_sa_initial_temperature,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_SA_INITIAL_TEMPERATURE,
-#			endif
 			MIN_TWOPO_SA_INITIAL_TEMPERATURE,
 			MAX_TWOPO_SA_INITIAL_TEMPERATURE,
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 	DefineCustomRealVariable("twopo_sa_temperature_reduction",
 			"TwoPO SA Temperature Reduction",
 			"Temperature reduction in SA phase: Tnew = X * T.",
 			&twopo_sa_temperature_reduction,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_SA_TEMPERATURE_REDUCTION,
-#			endif
 			MIN_TWOPO_SA_TEMPERATURE_REDUCTION,
 			MAX_TWOPO_SA_TEMPERATURE_REDUCTION,
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 	DefineCustomIntVariable("twopo_sa_equilibrium",
 			"TwoPO SA Equilibrium",
 			"Number of generated states for each temperature: N = X * Joins.",
 			&twopo_sa_equilibrium,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_SA_EQUILIBRIUM,
-#			endif
 			MIN_TWOPO_SA_EQUILIBRIUM,
 			MAX_TWOPO_SA_EQUILIBRIUM,
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 #	ifdef TWOPO_CACHE_PLANS
@@ -195,28 +168,22 @@ twopo_register(void)
 			"TwoPO Cache Plans",
 			"Enables TwoPO store plans generated earlier.",
 			&twopo_cache_plans,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_CACHE_PLANS,
-#			endif
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 	DefineCustomIntVariable("twopo_cache_size",
 			"TwoPO Cache Size",
 			"Limits the memory used to cache plans (in KB).",
 			&twopo_cache_size,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			DEFAULT_TWOPO_CACHE_SIZE,
-#			endif
 			MIN_TWOPO_CACHE_SIZE,
 			MAX_TWOPO_CACHE_SIZE,
 			PGC_USERSET,
-#			if POSTGRES_8_4 || POSTGRES_9_0
 			0,
-#			endif
+			NULL,
 			NULL,
 			NULL);
 #	endif

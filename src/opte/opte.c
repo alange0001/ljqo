@@ -37,25 +37,18 @@
 
 
 #define DEFAULT_OPTE_SHOW              true
-#define DEFAULT_OPTE_SHOW_GEQO_POOLS   false
 #define DEFAULT_OPTE_SHOW_CONVERGENCE  false
 #define DEFAULT_OPTE_SHOW_SAMPLING     false
-#define DEFAULT_OPTE_OUTPUT            stderr
-#define DEFAULT_OPTE_OUTPUT_STR        "stderr"
 
 static bool   opte_show             = DEFAULT_OPTE_SHOW;
-static bool   opte_show_geqo_pools  = DEFAULT_OPTE_SHOW_GEQO_POOLS;
 static bool   opte_show_convergence = DEFAULT_OPTE_SHOW_CONVERGENCE;
 static bool   opte_show_sampling    = DEFAULT_OPTE_SHOW_SAMPLING;
 static char  *opte_about_str        = "";
-static FILE  *opte_output_file      = NULL;
-static char  *opte_output_str       = DEFAULT_OPTE_OUTPUT_STR;
 
 static List  *opte_list             = NULL;
 
 /* ////////////////////////////////////////////////////////////////////////// */
 static float opteGetTime( opteData *opte );
-static void optePrintGEQOPool( int generation, Pool *pool );
 
 /* ////////////////////////////////////////////////////////////////////////// */
 /* ///////////////////////// Guc Functions ////////////////////////////////// */
@@ -64,57 +57,24 @@ show_opte_about(void)
 {
 	return
 	"Optimizer Evaluation (OptE) provides a control structure for optimizer\n"
-	"evaluation. Outputs of OptE are sent to PostgreSQL's log file.\n\n"
+	"evaluation. The output of OptE are sent to PostgreSQL's log file.\n\n"
 	"Settings:\n"
 	"  set opte_show = {true|false};      - Enables (or don't) OptE output.\n"
 	"  set opte_show_convergence = true;  - Optimizers' convergence.\n"
-	/*"  set opte_show_geqo_pools = true;"*/
 	;
-}
-
-static const char *
-assign_opte_output(const char *newval, bool doit, GucSource source)
-{
-	if( !strcmp(newval, "") || !strcmp(newval, DEFAULT_OPTE_OUTPUT_STR) )
-	{
-		if( doit )
-			opte_output_file = DEFAULT_OPTE_OUTPUT;
-		return DEFAULT_OPTE_OUTPUT_STR;
-	}
-	else
-	{
-		if( doit )
-		{
-			FILE *new_file;
-			new_file = fopen( newval, "a" );
-			if( !new_file )
-			{
-				elog(WARNING, "OptE cannot open file '%s'.", newval);
-				return NULL;
-			}
-			elog(NOTICE, "OptE output using file '%s'.", newval);
-			opte_output_file = new_file;
-		}
-		return newval;
-	}
 }
 
 void
 opteRegisterGuc(void)
 {
-	opte_output_file = DEFAULT_OPTE_OUTPUT; /* stderr is not a constant */
-
 	DefineCustomStringVariable("opte_about",
 							"About OptE",
 							"About Optimizer Evaluation (OptE).",
 							&opte_about_str, /* only to prevent seg. fault */
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							"",
-#							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
-#							endif
+							NULL,
 							NULL,
 							show_opte_about);
 
@@ -122,88 +82,37 @@ opteRegisterGuc(void)
 							"Show OptE",
 							"Show informations about optimizers.",
 							&opte_show,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_OPTE_SHOW,
-#							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
-#							endif
+							NULL,
 							NULL,
 							NULL);
 	DefineCustomBoolVariable("opte_show_convergence",
 							"OptE Convergence",
 							"Show optimizer's convergence.",
 							&opte_show_convergence,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_OPTE_SHOW_CONVERGENCE,
-#							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
-#							endif
+							NULL,
 							NULL,
 							NULL);
 	DefineCustomBoolVariable("opte_show_sampling",
 							"OptE Sampling",
 							"Show optimizer's sampling.",
 							&opte_show_sampling,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							DEFAULT_OPTE_SHOW_SAMPLING,
-#							endif
 							PGC_USERSET,
-#							if POSTGRES_8_4 || POSTGRES_9_0
 							0,
-#							endif
+							NULL,
 							NULL,
 							NULL);
-	DefineCustomBoolVariable("opte_show_geqo_pools",
-							"GEQO's pool",
-							"Show GEQO's pool evolution.",
-							&opte_show_geqo_pools,
-#							if POSTGRES_8_4 || POSTGRES_9_0
-							DEFAULT_OPTE_SHOW_GEQO_POOLS,
-#							endif
-							PGC_USERSET,
-#							if POSTGRES_8_4 || POSTGRES_9_0
-							0,
-#							endif
-							NULL,
-							NULL);
-	DefineCustomStringVariable("opte_output",
-							"OptE output",
-							"Output file for OptE.",
-							&opte_output_str,
-#							if POSTGRES_8_4 || POSTGRES_9_0
-							DEFAULT_OPTE_OUTPUT_STR,
-#							endif
-							PGC_USERSET,
-#							if POSTGRES_8_4 || POSTGRES_9_0
-							0,
-#							endif
-							assign_opte_output,
-							NULL);
-
-#	if GEQO_OPTE
-	geqoGetOpte_hook       = getOpteByPlannerInfo;
-	geqoOpteConverg_hook   = opteConvergence;
-	geqoOptePrintPool_hook = optePrintGEQOPool;
-#	endif
 }
 
 void
 opteUnregisterGuc(void)
 {
-	if( opte_output_file != NULL && opte_output_file != DEFAULT_OPTE_OUTPUT )
-	{
-		fclose( opte_output_file );
-		opte_output_file = DEFAULT_OPTE_OUTPUT;
-	}
-#	if GEQO_OPTE
-	geqoGetOpte_hook       = NULL;
-	geqoOpteConverg_hook   = NULL;
-	geqoOptePrintPool_hook = NULL;
-#	endif
 }
 
 /* ////////////////////////////////////////////////////////////////////////// */
@@ -252,42 +161,13 @@ alloc_sprintf(const char* value,...)
 }
 
 static const char*
-get_renation_name(PlannerInfo *root, int relid)
+get_relation_name(PlannerInfo *root, int relid)
 {
 	RangeTblEntry *rte;
 
 	Assert(relid <= list_length(root->parse->rtable));
 	rte = rt_fetch(relid, root->parse->rtable);
 	return rte->eref->aliasname;
-}
-
-void
-opte_printf(const char* value,...)
-{
-    char  *str_1 = NULL;
-    char  *str_2 = NULL;
-    va_list va;
-
-    if ( !opte_show || !value )
-    	return;
-
-	str_1 = alloc_sprintf("OptEval: %s", value);
-
-	if( str_1 )
-	{
-		va_start(va, value);
-		str_2 = alloc_vsprintf(str_1, va);
-		va_end(va);
-	}
-
-	if ( str_1 )
-		pfree(str_1);
-
-	if ( str_2 )
-	{
-		fprintf(opte_output_file, "%s\n", str_2);
-		pfree(str_2);
-	}
 }
 
 void
@@ -317,9 +197,9 @@ opte_print_initial_rels(PlannerInfo *root, List *initial_rels)
 		while ((x = bms_first_member(tmprelids)) >= 0)
 		{
 			if (count)
-				appendStringInfo(&str2, ", %s", get_renation_name(root, x));
+				appendStringInfo(&str2, ", %s", get_relation_name(root, x));
 			else
-				appendStringInfo(&str2, "%s", get_renation_name(root, x));
+				appendStringInfo(&str2, "%s", get_relation_name(root, x));
 			count++;
 		}
 		bms_free(tmprelids);
@@ -333,7 +213,7 @@ opte_print_initial_rels(PlannerInfo *root, List *initial_rels)
 			appendStringInfo(&str, "%s", str2.data);
 	}
 
-	fprintf(opte_output_file, "OptEval: Initial Rels: %s\n", str.data);
+	opte_printf("Initial Rels: %s\n", str.data);
 }
 
 void
@@ -427,19 +307,5 @@ opteConvergence( opteData *opte, Cost generated_cost )
 		opte_printf("Convergence:%.2f %d %.2f", ms, opte->plan_count,
 				opte->plan_min_cost);
 
-	}
-}
-
-static void
-optePrintGEQOPool( int generation, Pool *pool )
-{
-	int i;
-
-	if ( !opte_show_geqo_pools )
-		return;
-
-	for( i=0; i<pool->size; i++)
-	{
-		opte_printf("GEQO Pool:%d %d %.2f", generation, i, pool->data[i].worth);
 	}
 }
