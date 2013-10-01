@@ -56,11 +56,12 @@ static const char *
 show_opte_about(void)
 {
 	return
-	"Optimizer Evaluation (OptE) provides a control structure for optimizer\n"
-	"evaluation. The output of OptE are sent to DEBUG1.\n\n"
+	"Optimizer Evaluation (OptE) provides a control structure for evaluation\n"
+	"of optimizers. The output of OptE is sent to DEBUG1.\n\n"
 	"Settings:\n"
 	"  set opte_show = {true|false};      - OptE output.\n"
 	"  set opte_show_convergence = true;  - Optimizers' convergence.\n"
+	"  set opte_show_sampling = true;     - Optimizers' sampling.\n"
 	;
 }
 

@@ -30,7 +30,7 @@ show_sdp_about(void)
 	return
 	"Sampling and Dynamic Programming (SDP) optimizer\n\n"
 	"Settings:\n"
-	"  sdp_iteration_factor = Int   - factor that define the number of \n"
+	"  sdp_iteration_factor = Int   - factor that defines the number of \n"
 	"                                 iterations performed by S-Phase\n"
 	"    sdp_min_iterations = Int   - Minimum number of iterations in S-Phase\n"
 	"    sdp_max_iterations = Int   - Maximum number of iterations in S-Phase"
