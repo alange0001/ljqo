@@ -24,6 +24,7 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/joininfo.h"
 #include "utils/memutils.h"
+#include "opte.h"
 
 /*---------------------- CONFIGURATION VARIABLES -------------------------*/
 #ifndef LJQO
@@ -83,6 +84,7 @@ typedef struct private_data_type {
 	List*             initial_rels;
 	RelOptInfo**      node_list; /* initial_rels in the form of array */
 	edge_list_type    edge_list; /* list of edges in a query graph */
+	OPTE_DECLARE      ( *opte );
 } private_data_type;
 
 /**
@@ -124,6 +126,8 @@ sdp(PlannerInfo* root, int number_of_rels, List* initial_rels)
 	                                  initiate_private_data()*/
 	RelOptInfo** s_phase_ret;
 	RelOptInfo*  ret;
+
+	OPTE_GET_BY_PLANNERINFO( private_data.opte, root );
 
 	SDP_DEBUG_MSG("> sdp(root=%p, number_of_rels=%d, initial_rels=%p)",
 			root, number_of_rels, initial_rels);
@@ -447,6 +451,9 @@ s_phase(private_data_type* private_data)
 			cur_rel = returned_item->rel;
 
 			Assert(IsA(cur_rel, RelOptInfo));
+
+			OPTE_CONVERG( private_data->opte,
+			              cur_rel->cheapest_total_path->total_cost );
 
 			if( !min_cost ||
 				 min_cost > cur_rel->cheapest_total_path->total_cost)
@@ -883,6 +890,10 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 	ret = matrix[nrels-1][0];
 	SDP_DEBUG_MSG("  dp_phase(): best plan found! cost=%lf",
 			ret->cheapest_total_path->total_cost);
+
+	/* This line was removed because it is not related to sampling. */
+	/*OPTE_CONVERG( private_data->opte,
+			ret->cheapest_total_path->total_cost );*/
 
 	for( level = 0; level < nrels; level++ )
 		pfree(matrix[level]);
