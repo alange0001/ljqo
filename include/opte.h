@@ -45,7 +45,7 @@ typedef struct opteData {
 } opteData;
 
 
-
+extern bool  opte_show;
 extern void  opteRegisterGuc(void);
 extern void  opteUnregisterGuc(void);
 #define      OPTE_REGISTER opteRegisterGuc()
@@ -54,7 +54,9 @@ extern void  opteUnregisterGuc(void);
              "NOTE: Optimizer Evaluation (OptE) is enabled.\n" \
              "      You can learn more about it typing 'show opte_about;'."
 
-#define opte_printf(format,...) elog(DEBUG1, "OptEval: " format, ##__VA_ARGS__)
+#define opte_printf(format,...) \
+	if(opte_show) \
+		elog(DEBUG1, "OptEval: " format, ##__VA_ARGS__)
 
 extern void    opte_print_initial_rels(PlannerInfo *root, List *initial_rels);
 extern void    opteInit( opteData *opte, PlannerInfo *planner_info );

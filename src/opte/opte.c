@@ -40,7 +40,7 @@
 #define DEFAULT_OPTE_SHOW_CONVERGENCE  false
 #define DEFAULT_OPTE_SHOW_SAMPLING     false
 
-static bool   opte_show             = DEFAULT_OPTE_SHOW;
+bool           opte_show             = DEFAULT_OPTE_SHOW;
 static bool   opte_show_convergence = DEFAULT_OPTE_SHOW_CONVERGENCE;
 static bool   opte_show_sampling    = DEFAULT_OPTE_SHOW_SAMPLING;
 static char  *opte_about_str        = "";
@@ -64,6 +64,8 @@ show_opte_about(void)
 	"  set opte_show_sampling = true;     - Optimizers' sampling.\n"
 	;
 }
+
+opteData *getOpteByPlannerInfo(PlannerInfo *planner_info);
 
 void
 opteRegisterGuc(void)
@@ -109,11 +111,21 @@ opteRegisterGuc(void)
 							NULL,
 							NULL,
 							NULL);
+
+#	ifdef GEQO_OPTE
+	geqoGetOpteByPlannerInfo = (geqoGetOpteByPlannerInfo_type)
+	                           getOpteByPlannerInfo;
+	geqoOpteConvergence = (geqoOpteConvergence_type) opteConvergence;
+#	endif
 }
 
 void
 opteUnregisterGuc(void)
 {
+#	ifdef GEQO_OPTE
+	geqoGetOpteByPlannerInfo = NULL;
+	geqoOpteConvergence = NULL;
+#	endif
 }
 
 /* ////////////////////////////////////////////////////////////////////////// */
@@ -241,7 +253,7 @@ opteConvergence( opteData *opte, Cost generated_cost )
 	struct timeval stop_time;
 	float          ms;
 
-	if( opte == NULL || generated_cost <= 0 )
+	if( !opte_show || opte == NULL || generated_cost <= 0 )
 		return;
 
 	opte->plan_count++;
