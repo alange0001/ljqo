@@ -115,6 +115,7 @@ opteRegisterGuc(void)
 #	ifdef GEQO_OPTE
 	geqoGetOpteByPlannerInfo = (geqoGetOpteByPlannerInfo_type)
 	                           getOpteByPlannerInfo;
+	geqoOptePrintTime = (geqoOptePrintTime_type) optePrintTime;
 	geqoOpteConvergence = (geqoOpteConvergence_type) opteConvergence;
 #	endif
 }
@@ -208,7 +209,7 @@ opteFinish(opteData* opte)
 
 	opte_printf("Generated Plans: %d",
 			(opte->plan_count > 0) ?opte->plan_count :1);
-	opte_printf("Optimization Time = %f", opteGetTime( opte ) );
+	opte_printf("Optimization Time = %f", opteGetTime(opte) );
 
 	opte_list = list_delete( opte_list, opte );
 }
@@ -233,7 +234,7 @@ getOpteByPlannerInfo(PlannerInfo *planner_info)
 	return NULL;
 }
 
-static float
+float
 opteGetTime( opteData *opte )
 {
 	struct timeval stop_time;
@@ -248,11 +249,17 @@ opteGetTime( opteData *opte )
 }
 
 void
+optePrintTime( opteData *opte, const char *name )
+{
+	if( !opte_show || opte == NULL || name == NULL )
+		return;
+
+	opte_printf("Time (%s): %f", name, opteGetTime(opte));
+}
+
+void
 opteConvergence( opteData *opte, Cost generated_cost )
 {
-	struct timeval stop_time;
-	float          ms;
-
 	if( !opte_show || opte == NULL || generated_cost <= 0 )
 		return;
 
@@ -269,13 +276,8 @@ opteConvergence( opteData *opte, Cost generated_cost )
 		if ( !opte_show_convergence )
 			return;
 
-		gettimeofday(&stop_time, NULL);
-		ms =  ((stop_time.tv_sec*1000.0 + stop_time.tv_usec/1000.0)-
-				(opte->start_time.tv_sec*1000.0 +
-				 opte->start_time.tv_usec/1000.0));
-
-		opte_printf("Convergence:%.2f %d %.2f", ms, opte->plan_count,
-				opte->plan_min_cost);
+		opte_printf("Convergence:%.2f %d %.2f", opteGetTime(opte),
+		            opte->plan_count, opte->plan_min_cost);
 
 	}
 }

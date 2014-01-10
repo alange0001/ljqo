@@ -62,8 +62,8 @@ extern void    opte_print_initial_rels(PlannerInfo *root, List *initial_rels);
 extern void    opteInit( opteData *opte, PlannerInfo *planner_info );
 extern void    opteFinish( opteData* opte );
 extern opteData *getOpteByPlannerInfo( PlannerInfo *planner_info );
+extern void    optePrintTime( opteData *opte, const char *name );
 extern void    opteConvergence( opteData *opte, Cost generated_cost );
-
 
 #define OPTE_DECLARE( var ) \
 	opteData var
@@ -83,10 +83,14 @@ extern void    opteConvergence( opteData *opte, Cost generated_cost );
 	opte_printf("Calling Optimizer = %s", string)
 #define OPTE_PRINT_OPTCHEAPEST( cost ) \
 	opte_printf("Cheapest Total Cost = %.2lf", cost)
+#define OPTE_PRINT_TIME( opte_ptr, name ) \
+	optePrintTime( opte_ptr, name )
 #define OPTE_CONVERG( opte_ptr, generated_cost ) \
 	opteConvergence( opte_ptr, generated_cost )
 
 #else  /* if ENABLE_OPTE is not defined */
+
+#define opte_printf(format,...)
 
 #define OPTE_REGISTER
 #define OPTE_UNREGISTER
@@ -100,6 +104,7 @@ extern void    opteConvergence( opteData *opte, Cost generated_cost );
 #define OPTE_PRINT_INITIALRELS( root, initial_rels )
 #define OPTE_PRINT_OPTNAME( string )
 #define OPTE_PRINT_OPTCHEAPEST( cost )
+#define OPTE_PRINT_TIME( opte_ptr, name )
 #define OPTE_CONVERG( opte_ptr, generated_cost )
 
 #endif

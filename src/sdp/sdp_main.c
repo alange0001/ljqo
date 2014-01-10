@@ -135,9 +135,18 @@ sdp(PlannerInfo* root, int number_of_rels, List* initial_rels)
 
 	initiate_private_data(&private_data, root, number_of_rels, initial_rels);
 
-	/* Call the optimization phases: */
+	/* ------------ calling the optimization phases: ------------ */
+	OPTE_PRINT_TIME( private_data.opte, "before_phase_1" );
 	s_phase_ret = s_phase(&private_data);       /* phase 1: Sampling */
+
+	opte_printf( "Phase1 Cost = %.2lf",
+	             (*s_phase_ret)->cheapest_total_path->total_cost );
+	OPTE_PRINT_TIME( private_data.opte, "before_phase_2" );
+
 	ret = dp_phase(&private_data, s_phase_ret); /* phase 2: Dynamic Prog. */
+
+	OPTE_PRINT_TIME( private_data.opte, "after_phase_2" );
+	/* ------------ end of the optimization phases ------------ */
 
 	finalize_private_data(&private_data);
 
@@ -890,10 +899,6 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 	ret = matrix[nrels-1][0];
 	SDP_DEBUG_MSG("  dp_phase(): best plan found! cost=%lf",
 			ret->cheapest_total_path->total_cost);
-
-	/* This line was removed because it is not related to sampling. */
-	/*OPTE_CONVERG( private_data->opte,
-			ret->cheapest_total_path->total_cost );*/
 
 	for( level = 0; level < nrels; level++ )
 		pfree(matrix[level]);
