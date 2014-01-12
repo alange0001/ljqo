@@ -422,8 +422,7 @@ s_phase(private_data_type* private_data)
 		Assert(root->join_rel_level == NULL);
 
 		/* creating a new memory context */
-		/* TODO: temp contexts are generating odd costs for the plans
-		save_context = temporary_context_enter(NULL, root);*/
+		save_context = temporary_context_enter(NULL, root);
 
 		/* set the number of samples generated in this phase */
 		if( end_loop < sdp_min_iterations )
@@ -443,11 +442,10 @@ s_phase(private_data_type* private_data)
 			SDP_DEBUG_MSG2("  s_phase(): loop=%d", loop);
 
 			/* root->join_rel_list must be cleaned before a new sample. */
-			/* TODO: temp contexts are generating odd costs for the plans
 			root->join_rel_list = list_truncate(
-					root->join_rel_list, save_context->savelength);*/
+					root->join_rel_list, save_context->savelength);
 			/* It's also expected that root->join_rel_hash = NULL. */
-			/*root->join_rel_hash = NULL;*/
+			root->join_rel_hash = NULL;
 
 			/* get a new sample:
 			 *   cur_rel_list and cur_rels are outputs from the function call */
@@ -489,9 +487,8 @@ s_phase(private_data_type* private_data)
 		opte_printf("Phase1 Cost = %.2lf", min_cost);
 
 		/* restore old memory context */
-		/* TODO: temp contexts are generating odd costs for the plans
 		temporary_context_leave(save_context);
-		temporary_context_destroy(save_context); */
+		temporary_context_destroy(save_context);
 
 #		ifdef USE_ASSERT_CHECKING
 		{
