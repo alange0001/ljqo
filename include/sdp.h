@@ -51,8 +51,9 @@ extern int  sdp_threshold;
  */
 #define DEFAULT_SDP_ENABLED true
 #define DEFAULT_SDP_THRESHOLD 10
-#define MIN_SDP_THRESHOLD 2
 #endif
+
+#define MIN_SDP_THRESHOLD 2
 
 /*
  * Configuration variables

@@ -27,7 +27,7 @@
 #include "opte.h"
 
 /*---------------------- CONFIGURATION VARIABLES -------------------------*/
-#ifndef LJQO
+#ifndef LJQO /*if SDP is out ljqo library (in PostgreSQL source code) */
 bool sdp_enabled          = DEFAULT_SDP_ENABLED;
 int sdp_threshold         = DEFAULT_SDP_THRESHOLD;
 #endif
@@ -38,16 +38,31 @@ int sdp_max_iterations    = DEFAULT_SDP_MAX_ITERATIONS;
 /*------------------------------- DEBUG ----------------------------------*/
 /*#define SDP_DEBUG*/
 /*#define SDP_DEBUG2*/
+#define SDP_DEBUG3
 #ifdef SDP_DEBUG
-#define SDP_DEBUG_MSG(format, ...) elog(DEBUG1, "SDP: " format, ##__VA_ARGS__);
+#	include "nodes/print.h"
+#	define SDP_DEBUG_MSG(format, ...) \
+		elog(DEBUG1, "SDP: " format, ##__VA_ARGS__)
 #else
-#define SDP_DEBUG_MSG(...)
-#endif
+#	define SDP_DEBUG_MSG(...)
+#endif /* SDP_DEBUG */
 #ifdef SDP_DEBUG2
-#define SDP_DEBUG_MSG2(format, ...) elog(DEBUG1, "SDP: " format, ##__VA_ARGS__);
+#	define SDP_DEBUG_MSG2(format, ...) \
+		elog(DEBUG1, "SDP: " format, ##__VA_ARGS__)
 #else
-#define SDP_DEBUG_MSG2(...)
-#endif
+#	define SDP_DEBUG_MSG2(...)
+#endif /* SDP_DEBUG2 */
+#ifdef SDP_DEBUG3
+#	define SDP_DEBUG_MSG3(format, ...) \
+		elog(DEBUG1, "SDP: " format, ##__VA_ARGS__)
+static void debug_print_reloptinfo(const char *name,
+                                        PlannerInfo *root, RelOptInfo *rel);
+#	define SDP_DEBUG_PRINT_RELOPTINFO(name, root, rel) \
+	debug_print_reloptinfo(name, root, rel)
+#else
+#	define SDP_DEBUG_MSG3(...)
+#	define SDP_DEBUG_PRINT_RELOPTINFO(...)
+#endif /* SDP_DEBUG3 */
 
 /*------------------------ MAIN INTERNAL TYPES ---------------------------*/
 /**
@@ -374,7 +389,7 @@ destroy_edge_list(edge_list_type* edge_list)
 /**
  * sample_return_type:
  *    This structure is used only for communication between s_phase and
- *    s_phase_get_a_sample. s_phase_get_a_sample also use it to get the
+ *    s_phase_get_a_sample. s_phase_get_a_sample also uses it to get the
  *    results from its recursive calls.
  */
 typedef struct sample_return_type
@@ -412,6 +427,7 @@ s_phase(private_data_type* private_data)
 	{
 		temp_context_type* save_context;
 		Cost          min_cost = 0;
+		RelOptInfo*   min_r;
 		RelOptInfo**  min_rels = palloc(sizeof(RelOptInfo*) * nrels);
 		RelOptInfo**  cur_rels = palloc(sizeof(RelOptInfo*) * nrels);
 		PlannerInfo*  root = private_data->root;
@@ -448,7 +464,7 @@ s_phase(private_data_type* private_data)
 			root->join_rel_hash = NULL;
 
 			/* get a new sample:
-			 *   cur_rel_list and cur_rels are outputs from the function call */
+			 *   returned_list and cur_rels are outputs from the function call */
 			returned_list = s_phase_get_a_sample(&private_data->edge_list,
 					cur_rels, root, nrels);
 
@@ -475,6 +491,7 @@ s_phase(private_data_type* private_data)
 				SDP_DEBUG_MSG2("  s_phase(): min_cost=%lf --> %lf",
 						min_cost, cur_rel->cheapest_total_path->total_cost);
 
+				min_r = cur_rel;
 				min_cost = cur_rel->cheapest_total_path->total_cost;
 			}
 		} /* end for(loop) */
@@ -485,6 +502,7 @@ s_phase(private_data_type* private_data)
 
 		SDP_DEBUG_MSG("  s_phase(): min_cost=%lf", min_cost);
 		opte_printf("Phase1 Cost = %.2lf", min_cost);
+		SDP_DEBUG_PRINT_RELOPTINFO("  s_phase():", root, min_r);
 
 		/* restore old memory context */
 		temporary_context_leave(save_context);
@@ -900,6 +918,7 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 	ret = matrix[nrels-1][0];
 	SDP_DEBUG_MSG("  dp_phase(): best plan found! cost=%lf",
 			ret->cheapest_total_path->total_cost);
+	SDP_DEBUG_PRINT_RELOPTINFO("  dp_phase():", root, ret);
 
 	for( level = 0; level < nrels; level++ )
 		pfree(matrix[level]);
@@ -975,3 +994,149 @@ temporary_context_destroy(temp_context_type* saved_data)
 
 	SDP_DEBUG_MSG2("< temporary_context_destroy()");
 }
+
+/*============================== UTILITIES =================================*/
+#ifdef SDP_DEBUG3
+
+static char*
+debug_get_relids(Relids relids)
+{
+	char       *ret = palloc(sizeof(char) * 500);
+	//TODO: alloc ret appropriately
+	Relids		tmprelids;
+	int			x;
+	bool		first = true;
+
+	ret[0] = '\0';
+
+	tmprelids = bms_copy(relids);
+	while ((x = bms_first_member(tmprelids)) >= 0)
+	{
+		if (first)
+		{
+			sprintf(&ret[strlen(ret)], "%d", x);
+			first = false;
+		}
+		else
+			sprintf(&ret[strlen(ret)], " %d", x);
+	}
+	bms_free(tmprelids);
+
+	return ret;
+}
+
+static char*
+debug_get_path(PlannerInfo *root, Path *path)
+{
+	char       *ret = palloc(sizeof(char) * 2 * 1024 * 1024);
+	//TODO: alloc ret appropriately
+	const char *ptype;
+	bool		join = false;
+	Path	   *subpath = NULL;
+	int			i;
+
+	switch (nodeTag(path))
+	{
+		case T_Path:
+			ptype = "SeqScan";
+			break;
+		case T_IndexPath:
+			ptype = "IdxScan";
+			break;
+		case T_BitmapHeapPath:
+			ptype = "BitmapHeapScan";
+			break;
+		case T_BitmapAndPath:
+			ptype = "BitmapAndPath";
+			break;
+		case T_BitmapOrPath:
+			ptype = "BitmapOrPath";
+			break;
+		case T_TidPath:
+			ptype = "TidScan";
+			break;
+		case T_ForeignPath:
+			ptype = "ForeignScan";
+			break;
+		case T_AppendPath:
+			ptype = "Append";
+			break;
+		case T_MergeAppendPath:
+			ptype = "MergeAppend";
+			break;
+		case T_ResultPath:
+			ptype = "Result";
+			break;
+		case T_MaterialPath:
+			ptype = "Material";
+			subpath = ((MaterialPath *) path)->subpath;
+			break;
+		case T_UniquePath:
+			ptype = "Unique";
+			subpath = ((UniquePath *) path)->subpath;
+			break;
+		case T_NestPath:
+			ptype = "NestLoop";
+			join = true;
+			break;
+		case T_MergePath:
+			ptype = "MergeJoin";
+			join = true;
+			break;
+		case T_HashPath:
+			ptype = "HashJoin";
+			join = true;
+			break;
+		default:
+			ptype = "???Path";
+			break;
+	}
+
+	sprintf(ret, "%s", ptype);
+
+	if (!join && !subpath && path->parent)
+	{
+		char *tmp = debug_get_relids(path->parent->relids);
+		sprintf(&ret[strlen(ret)], "(%s)", tmp);
+		pfree(tmp);
+	}
+
+
+	if (join)
+	{
+		char *tmp1, *tmp2;
+		JoinPath   *jp = (JoinPath *) path;
+
+		tmp1 = debug_get_path(root, jp->outerjoinpath);
+		tmp2 = debug_get_path(root, jp->innerjoinpath);
+
+		sprintf(&ret[strlen(ret)], "(%s, %s)", tmp1, tmp2);
+
+		pfree(tmp1);
+		pfree(tmp2);
+	}
+	else
+	if (subpath)
+	{
+		char *tmp = debug_get_path(root, subpath);
+		sprintf(&ret[strlen(ret)], "(%s)", tmp);
+		pfree(tmp);
+	}
+
+	return ret;
+}
+
+static void
+debug_print_reloptinfo(const char *name, PlannerInfo *root, RelOptInfo *rel)
+{
+	char* str = debug_get_path(root, rel->cheapest_total_path);
+	//char* r = nodeToString(rel);
+	//char* f = pretty_format_node_dump(r);
+	SDP_DEBUG_MSG3("%s cheapest_total_path: %s", name, str);
+	//SDP_DEBUG_MSG3("%s", f);
+	//pfree(r);
+	//pfree(f);
+	pfree(str);
+}
+
+#endif /* SDP_DEBUG3 */
