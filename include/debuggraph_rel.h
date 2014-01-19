@@ -1,8 +1,8 @@
 /*
- * ljqo.h
+ * debuggraph_rel.h
  *
- *   Interface of LJQO Plugin with PostgreSQL and control structures for all
- *   optimizers.
+ *   DebugGraph structures and functions. They are used to generate directed
+ *   graphs for debug purposes.
  *
  * Copyright (C) 2009-2014, Adriano Lange
  *
@@ -26,27 +26,21 @@
  * PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
  */
 
-#ifndef LJQO_H_
-#define LJQO_H_
+#ifndef DEBUGGRAPH_REL_H_
+#define DEBUGGRAPH_REL_H_
 
-#include <pg_config.h>
-#include <postgres.h>
+#include "ljqo.h"
 
-#if PG_VERSION_NUM/100 == 902 /* support for 9.2 */
-#	define POSTGRES_9 1
-#elif PG_VERSION_NUM/100 == 903 /* support for 9.3 */
-#else /* exception */
-#	error "The specified PostgreSQL is not supported!"
-#endif
+#if ENABLE_DEBUGGRAPH
 
-#undef PACKAGE_BUGREPORT
-#undef PACKAGE_NAME
-#undef PACKAGE_STRING
-#undef PACKAGE_TARNAME
-#undef PACKAGE_VERSION
+#include <optimizer/paths.h>
 
-#include "ljqo_config.h"
+extern void printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel);
 
-#define LJQO
+#else /*ENABLE_DEBUGGRAPH*/
 
-#endif /* LJQO_H_ */
+#define printDebugGraphRel(...)
+
+#endif /*ENABLE_DEBUGGRAPH*/
+
+#endif /*DEBUGGRAPH_REL_H_*/

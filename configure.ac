@@ -2,8 +2,8 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT([LJQO Plugin], [0.2], [alange0001@gmail.com])
-AC_COPYRIGHT([Copyright 2009-2013, Adriano Lange])
+AC_INIT([LJQO Plugin], [0.3], [alange0001@gmail.com])
+AC_COPYRIGHT([Copyright 2009-2014, Adriano Lange])
 AM_INIT_AUTOMAKE()
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_HEADER([include/ljqo_config.h])
@@ -73,11 +73,20 @@ AC_MSG_CHECKING([whether to build with optimizer evaluation support])
 AC_ARG_ENABLE(opte,
   [  --enable-opte           enable optimizer evaluation support],
   [ 
-    AC_DEFINE([ENABLE_OPTE], 1, [Define to 1 if you optimizer evaluation support. (--enable-opte)])
+    AC_DEFINE([ENABLE_OPTE], 1, [Define to 1 if you want optimizer evaluation support. (--enable-opte)])
     AC_SUBST(OPTE_SUBDIR, opte)
     AC_SUBST(OPTE_OBJ, opte/libopte.la)
   ])
 AC_MSG_RESULT([$enable_opte])
+AC_MSG_CHECKING([whether to build with debuggraph support])
+AC_ARG_ENABLE(debuggraph,
+  [  --enable-debuggraph     enable debuggraph support],
+  [ 
+    AC_DEFINE([ENABLE_DEBUGGRAPH], 1, [Define to 1 if you want debuggraph support. (--enable-debuggraph)])
+    AC_SUBST(DEBUGGRAPH_SUBDIR, debuggraph)
+    AC_SUBST(DEBUGGRAPH_OBJ, debuggraph/libdebuggraph.la)
+  ])
+AC_MSG_RESULT([$enable_debuggraph])
 
 
 # Setting directories
@@ -91,6 +100,7 @@ AC_CONFIG_FILES([
 	src/sdp/Makefile
 	src/twopo/Makefile
 	src/opte/Makefile
+	src/debuggraph/Makefile
 ])
 AC_OUTPUT
 

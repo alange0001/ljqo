@@ -1,6 +1,9 @@
 /* include/ljqo_config.h.in.  Generated from configure.ac by autoheader.  */
 
-/* Define to 1 if you optimizer evaluation support. (--enable-opte) */
+/* Define to 1 if you want debuggraph support. (--enable-debuggraph) */
+#undef ENABLE_DEBUGGRAPH
+
+/* Define to 1 if you want optimizer evaluation support. (--enable-opte) */
 #undef ENABLE_OPTE
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
