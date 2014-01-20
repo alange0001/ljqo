@@ -48,7 +48,7 @@ static const char* get_expr(const Node *expr, const List *rtable);
 void
 printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 {
-	DebugGraph *graph = createDebugGraph();
+	DebugGraph *graph = createDebugGraph("RelOptInfo");
 	DebugNode  *node  = newDebugNodeByPointer(graph, rel, "RelOptInfo");
 	DebugNode  *n;
 
@@ -90,8 +90,7 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 		}
 	}
 
-	printGraphvizToFile(graph, stdout);
-	fflush(stdout);
+	printDebugGraph(graph);
 
 	destroyDebugGraph(graph);
 }
@@ -233,6 +232,8 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 
 	node = newDebugNodeByPointer(graph, path, ptype);
 	Assert(node);
+
+	addDebugNodeAttributeArgs(node, "mem address", "%p", path);
 
 	if (path->parent)
 		add_relids(node, "parent->relids", root, path->parent->relids);

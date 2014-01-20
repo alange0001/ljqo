@@ -29,32 +29,27 @@
 #include "debuggraph.h"
 #include <lib/stringinfo.h>
 
+/* ///////////////////////// GRAPH CONSTRUCTION ///////////////////////////// */
+
 #define INITIAL_LIST_SIZE 100
 
-static void addDebugNode(DebugGraph* graph, DebugNode* node);
-static void addDebugEdge(DebugGraph* graph, DebugEdge* edge);
-static DebugNode* createDebugNode( const char* internal_name,
-		const char* name );
-static void destroyDebugNode(DebugNode* node);
-static DebugEdge* createDebugEdge( const char* source,
-		const char* destination, const char* label );
-static void destroyDebugEdge(DebugEdge* edge);
 static char* copyString( const char* source );
-static void listCheckSpace(int count, int *space, size_t element_size,
-		void **list);
-static void listCheckSpace2(int count, int *space, size_t element_size,
-		void **list1, void **list2);
-
 
 DebugGraph*
-createDebugGraph()
+createDebugGraph(const char *name)
 {
 	DebugGraph* graph;
 
+	Assert(name);
+
 	graph = (DebugGraph*) palloc0(sizeof(DebugGraph));
+	graph->name = copyString(name);
 
 	return graph;
 }
+
+static void destroyDebugNode(DebugNode* node);
+static void destroyDebugEdge(DebugEdge* edge);
 
 void
 destroyDebugGraph(DebugGraph* graph)
@@ -62,6 +57,9 @@ destroyDebugGraph(DebugGraph* graph)
 	int i;
 
 	Assert(graph);
+
+	if (graph->name)
+		pfree(graph->name);
 
 	if( graph->nodeMemorySpace )
 	{
@@ -85,6 +83,12 @@ destroyDebugGraph(DebugGraph* graph)
 
 	pfree(graph);
 }
+
+static DebugNode* findDebugNodeByInternalName(DebugGraph *graph,
+		const char *internal_name);
+static DebugNode* createDebugNode( const char* internal_name,
+		const char* name );
+static void addDebugNode(DebugGraph* graph, DebugNode* node);
 
 DebugNode*
 newDebugNode(DebugGraph* graph, const char* internal_name, const char* name)
@@ -119,9 +123,15 @@ newDebugNodeByPointer(DebugGraph* graph, void* ptr, const char* name)
 	return node;
 }
 
+static DebugEdge* createDebugEdge( const char* source,
+		const char* destination, const char* label );
+static void addDebugEdge(DebugGraph* graph, DebugEdge* edge);
+static DebugEdge* findDebugEdge(DebugGraph *graph, const char *source,
+		const char *destination, const char *label);
+
 void
-newDebugEdgeByName(DebugGraph* graph, const char* source, const char* destination,
-		const char* label)
+newDebugEdgeByName(DebugGraph* graph, const char* source,
+		const char* destination, const char* label)
 {
 	DebugEdge* edge;
 
@@ -167,6 +177,9 @@ addDebugNodeAttributeArgs(DebugNode* node, const char* name,
 	pfree(str_value);
 }
 
+static void listCheckSpace2(int count, int *space, size_t element_size,
+		void **list1, void **list2);
+
 void
 addDebugNodeAttribute(DebugNode* node, const char* name, const char* value)
 {
@@ -191,50 +204,7 @@ addDebugNodeAttribute(DebugNode* node, const char* name, const char* value)
 	node->attributeValues[index] = copyString(value);
 }
 
-static const char* htmlSpecialChars(StringInfo str_ret, const char *str);
-
-void
-printGraphvizToFile( DebugGraph* graph, FILE* file )
-{
-	StringInfoData aux;
-	int i,j;
-
-	Assert(graph && file);
-
-	initStringInfo(&aux);
-
-	fprintf(file, "digraph g {\n");
-	fprintf(file, "\tgraph [fontsize=30 labelloc=\"t\" label=\"\" splines=true overlap=false rankdir = \"LR\"];\n");
-	fprintf(file, "\tnode  [style = \"filled\" penwidth = 1 fillcolor = \"white\" fontname = \"Courier New\" shape = \"Mrecord\"];\n");
-	fprintf(file, "\tedge [ penwidth = 2 fontsize = 18 fontcolor = \"black\" ];\n");
-	fprintf(file, "\tratio = auto;\n");
-	for( i=0; i<graph->nodeCount; i++ )
-	{
-		fprintf(file, "\t\"%s\" [ label =<\\\n", graph->nodes[i]->internal_name);
-		fprintf(file, "\t\t<table border=\"0\" cellborder=\"0\" cellpadding=\"3\" bgcolor=\"white\">\\\n");
-		fprintf(file, "\t\t\t<tr><td bgcolor=\"black\" align=\"center\" colspan=\"2\"><font color=\"white\">%s</font></td></tr>\\\n",
-				htmlSpecialChars(&aux, graph->nodes[i]->name));
-		for( j=0; j<graph->nodes[i]->attributeCount; j++ )
-		{
-			fprintf(file, "\t\t\t<tr><td bgcolor=\"grey\" align=\"left\">%s:</td><td align=\"left\">%s</td></tr>\n",
-					htmlSpecialChars(&aux, graph->nodes[i]->attributeNames[j]),
-					htmlSpecialChars(&aux, graph->nodes[i]->attributeValues[j]));
-		}
-		fprintf(file, "\t\t</table>> ];\n");
-	}
-	for( i=0; i<graph->edgeCount; i++ )
-	{
-		fprintf(file, "\t\"%s\" -> \"%s\" [ label = \"%s\" ];\n",
-				graph->edges[i]->source,
-				graph->edges[i]->destination,
-				graph->edges[i]->label);
-	}
-	fprintf(file, "}\n");
-
-	pfree(aux.data);
-}
-
-DebugNode*
+static DebugNode*
 findDebugNodeByInternalName( DebugGraph *graph, const char *internal_name )
 {
 	int i;
@@ -249,7 +219,7 @@ findDebugNodeByInternalName( DebugGraph *graph, const char *internal_name )
 	return NULL;
 }
 
-DebugEdge*
+static DebugEdge*
 findDebugEdge( DebugGraph *graph, const char *source, const char *destination,
 		const char *label )
 {
@@ -265,28 +235,6 @@ findDebugEdge( DebugGraph *graph, const char *source, const char *destination,
 			return graph->edges[i];
 	}
 	return NULL;
-}
-
-static void
-addDebugNode(DebugGraph* graph, DebugNode* node)
-{
-	Assert(graph && node);
-
-	listCheckSpace(graph->nodeCount, &graph->nodeMemorySpace,
-			sizeof(DebugNode*), (void*) &graph->nodes);
-
-	graph->nodes[ graph->nodeCount++ ] = node;
-}
-
-static void
-addDebugEdge(DebugGraph* graph, DebugEdge* edge)
-{
-	Assert(graph && edge);
-
-	listCheckSpace(graph->edgeCount, &graph->edgeMemorySpace,
-			sizeof(DebugEdge*), (void*) &graph->edges);
-
-	graph->edges[ graph->edgeCount++ ] = edge;
 }
 
 static DebugNode*
@@ -357,6 +305,31 @@ destroyDebugEdge(DebugEdge* edge)
 	pfree( edge );
 }
 
+static void listCheckSpace(int count, int *space, size_t element_size,
+		void **list);
+
+static void
+addDebugNode(DebugGraph* graph, DebugNode* node)
+{
+	Assert(graph && node);
+
+	listCheckSpace(graph->nodeCount, &graph->nodeMemorySpace,
+			sizeof(DebugNode*), (void*) &graph->nodes);
+
+	graph->nodes[ graph->nodeCount++ ] = node;
+}
+
+static void
+addDebugEdge(DebugGraph* graph, DebugEdge* edge)
+{
+	Assert(graph && edge);
+
+	listCheckSpace(graph->edgeCount, &graph->edgeMemorySpace,
+			sizeof(DebugEdge*), (void*) &graph->edges);
+
+	graph->edges[ graph->edgeCount++ ] = edge;
+}
+
 static char*
 copyString(const char* source)
 {
@@ -414,6 +387,53 @@ listCheckSpace2(int count, int *space, size_t element_size,
 
 	listCheckSpace(count,  space,     element_size, list1);
 	listCheckSpace(count, &space_tmp, element_size, list2);
+}
+
+/* ///////////////////////// GRAPH PRINTING ///////////////////////////////// */
+
+#define DEBUGGRAPH_PRINTF(graph, format,...) \
+	elog(DEBUG1, "DebugGraph (%s): " format, (graph)->name, ##__VA_ARGS__)
+
+static const char* htmlSpecialChars(StringInfo str_ret, const char *str);
+
+void printDebugGraph(DebugGraph* graph)
+{
+	StringInfoData aux;
+	int i,j;
+
+	Assert(graph);
+
+	initStringInfo(&aux);
+
+	DEBUGGRAPH_PRINTF(graph, "digraph %s {", graph->name);
+	DEBUGGRAPH_PRINTF(graph, "\tgraph [fontsize=30 labelloc=\"t\" label=\"\" splines=true overlap=false rankdir = \"LR\"];");
+	DEBUGGRAPH_PRINTF(graph, "\tnode  [style = \"filled\" penwidth = 1 fillcolor = \"white\" fontname = \"Courier New\" shape = \"Mrecord\"];");
+	DEBUGGRAPH_PRINTF(graph, "\tedge [ penwidth = 2 fontsize = 18 fontcolor = \"black\" ];");
+	DEBUGGRAPH_PRINTF(graph, "\tratio = auto;");
+	for( i=0; i<graph->nodeCount; i++ )
+	{
+		DEBUGGRAPH_PRINTF(graph, "\t\"%s\" [ label =<\\", graph->nodes[i]->internal_name);
+		DEBUGGRAPH_PRINTF(graph, "\t\t<table border=\"0\" cellborder=\"0\" cellpadding=\"3\" bgcolor=\"white\">\\");
+		DEBUGGRAPH_PRINTF(graph, "\t\t\t<tr><td bgcolor=\"black\" align=\"center\" colspan=\"2\"><font color=\"white\">%s</font></td></tr>\\",
+				htmlSpecialChars(&aux, graph->nodes[i]->name));
+		for( j=0; j<graph->nodes[i]->attributeCount; j++ )
+		{
+			DEBUGGRAPH_PRINTF(graph, "\t\t\t<tr><td bgcolor=\"grey\" align=\"left\">%s:</td><td align=\"left\">%s</td></tr>",
+					htmlSpecialChars(&aux, graph->nodes[i]->attributeNames[j]),
+					htmlSpecialChars(&aux, graph->nodes[i]->attributeValues[j]));
+		}
+		DEBUGGRAPH_PRINTF(graph, "\t\t</table>> ];");
+	}
+	for( i=0; i<graph->edgeCount; i++ )
+	{
+		DEBUGGRAPH_PRINTF(graph, "\t\"%s\" -> \"%s\" [ label = \"%s\" ];",
+				graph->edges[i]->source,
+				graph->edges[i]->destination,
+				graph->edges[i]->label);
+	}
+	DEBUGGRAPH_PRINTF(graph, "}");
+
+	pfree(aux.data);
 }
 
 static const char*

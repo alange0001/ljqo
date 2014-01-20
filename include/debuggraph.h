@@ -33,6 +33,8 @@
 
 #if ENABLE_DEBUGGRAPH
 
+/* //////////////////////////// STRUCTURES ////////////////////////////////// */
+
 typedef struct DebugNode {
 	char* internal_name;
 	char* name;
@@ -49,6 +51,7 @@ typedef struct DebugEdge {
 } DebugEdge;
 
 typedef struct DebugGraph {
+	char         *name;
 	DebugNode**   nodes;
 	DebugEdge**   edges;
 	int           nodeCount;
@@ -57,7 +60,9 @@ typedef struct DebugGraph {
 	int           edgeMemorySpace;
 } DebugGraph;
 
-extern DebugGraph* createDebugGraph();
+/* ///////////////////////// GRAPH CONSTRUCTION ///////////////////////////// */
+
+extern DebugGraph* createDebugGraph(const char *name);
 extern void destroyDebugGraph(DebugGraph* graph);
 extern DebugNode* newDebugNode(DebugGraph* graph, const char* internal_name,
 		const char* name);
@@ -69,11 +74,10 @@ extern void addDebugNodeAttributeArgs(DebugNode* node, const char* name,
 		const char* value,...);
 extern void newDebugEdgeByName(DebugGraph* graph, const char* source,
 		const char* destination, const char* label);
-extern void printGraphvizToFile(DebugGraph* graph, FILE* file);
-extern DebugNode* findDebugNodeByInternalName(DebugGraph *graph,
-		const char *internal_name);
-extern DebugEdge* findDebugEdge(DebugGraph *graph, const char *source,
-		const char *destination, const char *label);
+
+/* ///////////////////////// GRAPH PRINTING ///////////////////////////////// */
+
+extern void printDebugGraph(DebugGraph* graph);
 
 #endif /*ENABLE_DEBUGGRAPH*/
 

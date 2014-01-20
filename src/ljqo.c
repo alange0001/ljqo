@@ -35,6 +35,7 @@
 #include <limits.h>
 
 #include "opte.h"
+#include "debuggraph_rel.h"
 #include "sdp.h"
 #include "twopo.h"
 
@@ -138,6 +139,8 @@ ljqo_selector(PlannerInfo *root, int levels_needed, List *initial_rels)
 
 	OPTE_PRINT_OPTCHEAPEST( result->cheapest_total_path->total_cost );
 	OPTE_FINISH( &opte );
+
+	printDebugGraphRel(root, result);
 
 	return result;
 }
