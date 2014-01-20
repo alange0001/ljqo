@@ -140,7 +140,7 @@ ljqo_selector(PlannerInfo *root, int levels_needed, List *initial_rels)
 	OPTE_PRINT_OPTCHEAPEST( result->cheapest_total_path->total_cost );
 	OPTE_FINISH( &opte );
 
-	printDebugGraphRel(root, result);
+	DEBUGGRAPH_PRINT_REL(root, result);
 
 	return result;
 }

@@ -36,11 +36,13 @@
 #include <optimizer/paths.h>
 
 extern void printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel);
+#define DEBUGGRAPH_PRINT_REL(root, rel) \
+		printDebugGraphRel(root, rel)
 
 #else /*ENABLE_DEBUGGRAPH*/
 
-#define printDebugGraphRel(...)
+#define DEBUGGRAPH_PRINT_REL(...)
 
-#endif /*ENABLE_DEBUGGRAPH*/
+#endif /*else ENABLE_DEBUGGRAPH*/
 
 #endif /*DEBUGGRAPH_REL_H_*/
