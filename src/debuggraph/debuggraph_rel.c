@@ -4,7 +4,9 @@
  *   DebugGraph structures and functions. They are used to generate directed
  *   graphs for debug purposes.
  *
- * Copyright (C) 2009-2014, Adriano Lange
+ * Portions Copyright (C) 2009-2014, Adriano Lange
+ * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
  *
  * This file is part of LJQO Plugin.
  *
@@ -55,6 +57,8 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 	add_relids(node, "relids", root, rel->relids);
 	addDebugNodeAttributeArgs(node, "rows", "%.0f", rel->rows);
 	addDebugNodeAttributeArgs(node, "width", "%d", rel->width);
+	addDebugNodeAttributeArgs(node, "tuples", "%.0f", rel->tuples);
+	addDebugNodeAttributeArgs(node, "pages", "%u", rel->pages);
 
 	if (n = get_restrictclauses(graph, root, rel->baserestrictinfo))
 		newDebugEdgeByName(graph, node->internal_name, n->internal_name,
@@ -241,6 +245,7 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 	addDebugNodeAttributeArgs(node, "startup_cost", "%.2lf",
 			path->startup_cost);
 	addDebugNodeAttributeArgs(node, "total_cost", "%.2lf", path->total_cost);
+	addDebugNodeAttributeArgs(node, "rows", "%.0f", path->rows);
 
 	if (path->pathkeys)
 	{
