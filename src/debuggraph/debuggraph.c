@@ -466,6 +466,8 @@ htmlSpecialChars(StringInfo str_ret, const char *str)
 	const char *find_replace[][2] = {
 			{">", "&gt;"},
 			{"<", "&lt;"},
+			{"{", "\\{"},
+			{"}", "\\}"},
 			{NULL, NULL}
 		};
 

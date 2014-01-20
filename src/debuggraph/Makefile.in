@@ -46,7 +46,8 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 LTLIBRARIES = $(noinst_LTLIBRARIES)
 libdebuggraph_la_LIBADD =
-am_libdebuggraph_la_OBJECTS = debuggraph.lo debuggraph_rel.lo
+am_libdebuggraph_la_OBJECTS = debuggraph.lo debuggraph_rel.lo \
+	debuggraph_node.lo
 libdebuggraph_la_OBJECTS = $(am_libdebuggraph_la_OBJECTS)
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)/include
 depcomp = $(SHELL) $(top_srcdir)/depcomp
@@ -186,7 +187,7 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 INCLUDES = -I$(top_srcdir)/include
 noinst_LTLIBRARIES = libdebuggraph.la
-libdebuggraph_la_SOURCES = debuggraph.c debuggraph_rel.c
+libdebuggraph_la_SOURCES = debuggraph.c debuggraph_rel.c debuggraph_node.c
 all: all-am
 
 .SUFFIXES:
@@ -240,6 +241,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/debuggraph.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/debuggraph_node.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/debuggraph_rel.Plo@am__quote@
 
 .c.o:

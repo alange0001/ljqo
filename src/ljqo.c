@@ -36,6 +36,7 @@
 
 #include "opte.h"
 #include "debuggraph_rel.h"
+#include "debuggraph_node.h"
 #include "sdp.h"
 #include "twopo.h"
 
@@ -141,6 +142,7 @@ ljqo_selector(PlannerInfo *root, int levels_needed, List *initial_rels)
 	OPTE_FINISH( &opte );
 
 	DEBUGGRAPH_PRINT_REL(root, result);
+	//DEBUGGRAPH_PRINT_NODE(result, "ReturnedRelOptInfo");
 
 	return result;
 }
