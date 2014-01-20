@@ -398,12 +398,13 @@ static const char* htmlSpecialChars(StringInfo str_ret, const char *str);
 
 void printDebugGraph(DebugGraph* graph)
 {
-	StringInfoData aux;
+	StringInfoData aux1, aux2;
 	int i,j;
 
 	Assert(graph);
 
-	initStringInfo(&aux);
+	initStringInfo(&aux1);
+	initStringInfo(&aux2);
 
 	DEBUGGRAPH_PRINTF(graph, "digraph %s {", graph->name);
 	DEBUGGRAPH_PRINTF(graph, "\tgraph [fontsize=30 labelloc=\"t\" label=\"\" splines=true overlap=false rankdir = \"LR\"];");
@@ -415,12 +416,12 @@ void printDebugGraph(DebugGraph* graph)
 		DEBUGGRAPH_PRINTF(graph, "\t\"%s\" [ label =<\\", graph->nodes[i]->internal_name);
 		DEBUGGRAPH_PRINTF(graph, "\t\t<table border=\"0\" cellborder=\"0\" cellpadding=\"3\" bgcolor=\"white\">\\");
 		DEBUGGRAPH_PRINTF(graph, "\t\t\t<tr><td bgcolor=\"black\" align=\"center\" colspan=\"2\"><font color=\"white\">%s</font></td></tr>\\",
-				htmlSpecialChars(&aux, graph->nodes[i]->name));
+				htmlSpecialChars(&aux1, graph->nodes[i]->name));
 		for( j=0; j<graph->nodes[i]->attributeCount; j++ )
 		{
 			DEBUGGRAPH_PRINTF(graph, "\t\t\t<tr><td bgcolor=\"grey\" align=\"left\">%s:</td><td align=\"left\">%s</td></tr>",
-					htmlSpecialChars(&aux, graph->nodes[i]->attributeNames[j]),
-					htmlSpecialChars(&aux, graph->nodes[i]->attributeValues[j]));
+					htmlSpecialChars(&aux1, graph->nodes[i]->attributeNames[j]),
+					htmlSpecialChars(&aux2, graph->nodes[i]->attributeValues[j]));
 		}
 		DEBUGGRAPH_PRINTF(graph, "\t\t</table>> ];");
 	}
@@ -433,7 +434,8 @@ void printDebugGraph(DebugGraph* graph)
 	}
 	DEBUGGRAPH_PRINTF(graph, "}");
 
-	pfree(aux.data);
+	pfree(aux1.data);
+	pfree(aux2.data);
 }
 
 static const char*
