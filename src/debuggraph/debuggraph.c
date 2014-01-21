@@ -99,7 +99,10 @@ newDebugNode(DebugGraph* graph, const char* internal_name, const char* name)
 
 	node = findDebugNodeByInternalName(graph, internal_name);
 	if( node )
+	{
+		node->create_node_again = true;
 		return node;
+	}
 
 	node = createDebugNode( internal_name, name );
 	addDebugNode(graph, node);
@@ -123,6 +126,14 @@ newDebugNodeByPointer(DebugGraph* graph, void* ptr, const char* name)
 	return node;
 }
 
+void renameDebugNode(DebugNode* node, const char* new_name)
+{
+	Assert(node);
+
+	pfree(node->name);
+	node->name = copyString(new_name);
+}
+
 static DebugEdge* createDebugEdge( const char* source,
 		const char* destination, const char* label );
 static void addDebugEdge(DebugGraph* graph, DebugEdge* edge);
@@ -143,6 +154,17 @@ newDebugEdgeByName(DebugGraph* graph, const char* source,
 
 	edge = createDebugEdge( source, destination, label );
 	addDebugEdge( graph, edge );
+}
+
+void newDebugEdgeByNode(DebugGraph* graph, DebugNode* source,
+		DebugNode* destination, const char* label)
+{
+	Assert(graph && source && label);
+	if (destination)
+		newDebugEdgeByName(graph, source->internal_name,
+				destination->internal_name, label);
+	else
+		addDebugNodeAttribute(source, label, "NULL");
 }
 
 void
@@ -247,6 +269,7 @@ createDebugNode(const char* internal_name, const char* name)
 
 	node->internal_name = copyString( internal_name );
 	node->name = copyString( name );
+	node->create_node_again = false;
 
 	return node;
 }

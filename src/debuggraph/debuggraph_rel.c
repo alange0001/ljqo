@@ -38,6 +38,23 @@
 #include <utils/syscache.h>
 #include <optimizer/clauses.h>
 
+static DebugNode* get_reloptinfo(DebugGraph *graph, PlannerInfo *root,
+		RelOptInfo *rel);
+
+void
+printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
+{
+	DebugGraph *graph = createDebugGraph("RelOptInfo");
+
+	Assert(rel && IsA(rel, RelOptInfo));
+
+	get_reloptinfo(graph, root, rel);
+
+	printDebugGraph(graph);
+
+	destroyDebugGraph(graph);
+}
+
 static void add_relids(DebugNode *node, const char *name,
 		PlannerInfo *root, Relids relids);
 static DebugNode* get_restrictclauses(DebugGraph *graph, PlannerInfo *root,
@@ -47,26 +64,39 @@ static DebugNode* get_path(DebugGraph *graph, PlannerInfo *root,
 static const char* get_pathkeys(const List *pathkeys, const List *rtable);
 static const char* get_expr(const Node *expr, const List *rtable);
 
-void
-printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
+#define booltostr(x)  ((x) ? "true" : "false")
+
+static DebugNode*
+get_reloptinfo(DebugGraph *graph, PlannerInfo *root, RelOptInfo *rel)
 {
-	DebugGraph *graph = createDebugGraph("RelOptInfo");
-	DebugNode  *node  = newDebugNodeByPointer(graph, rel, "RelOptInfo");
-	DebugNode  *n;
+	DebugNode  *node;
+
+	Assert(graph && root);
+
+	if (!rel)
+		return NULL;
+
+	node  = newDebugNodeByPointer(graph, rel, "RelOptInfo");
+	Assert(node);
+	if (node->create_node_again)
+		return node;
 
 	add_relids(node, "relids", root, rel->relids);
+	add_relids(node, "lateral_relids", root, rel->lateral_relids);
 	addDebugNodeAttributeArgs(node, "rows", "%.0f", rel->rows);
 	addDebugNodeAttributeArgs(node, "width", "%d", rel->width);
+	addDebugNodeAttributeArgs(node, "consider_startup", "%s",
+			booltostr(rel->consider_startup));
 	addDebugNodeAttributeArgs(node, "tuples", "%.0f", rel->tuples);
+	addDebugNodeAttributeArgs(node, "allvisfrac", "%.4f", rel->allvisfrac);
 	addDebugNodeAttributeArgs(node, "pages", "%u", rel->pages);
 
-	if (n = get_restrictclauses(graph, root, rel->baserestrictinfo))
-		newDebugEdgeByName(graph, node->internal_name, n->internal_name,
-				"baserestrictinfo");
-
-	if (n = get_restrictclauses(graph, root, rel->joininfo))
-		newDebugEdgeByName(graph, node->internal_name, n->internal_name,
-				"joininfo");
+	newDebugEdgeByNode(graph, node,
+			get_restrictclauses(graph, root, rel->baserestrictinfo),
+			"baserestrictinfo");
+	newDebugEdgeByNode(graph, node,
+			get_restrictclauses(graph, root, rel->joininfo),
+			"joininfo");
 
 	if (rel->pathlist)
 	{
@@ -80,6 +110,7 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 
 		foreach(l, rel->pathlist)
 		{
+			DebugNode  *n;
 			n = get_path(graph, root, lfirst(l));
 			Assert(n);
 			newDebugEdgeByName(graph, node_list->internal_name,
@@ -93,10 +124,10 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 									n->internal_name, "cheapest_total_path");
 		}
 	}
+	addDebugNodeAttributeArgs(node, "has_eclass_joins", "%s",
+			booltostr(rel->has_eclass_joins));
 
-	printDebugGraph(graph);
-
-	destroyDebugGraph(graph);
+	return node;
 }
 
 static const char*
@@ -114,25 +145,26 @@ static void
 add_relids(DebugNode *node, const char *name, PlannerInfo *root, Relids relids)
 {
 	StringInfoData  str;
-	int         count = 0;
 	Relids		tmprelids;
 	int			x;
 
+	if (!relids)
+	{
+		addDebugNodeAttribute(node, name, "NULL");
+		return;
+	}
+
 	initStringInfo(&str);
+	appendStringInfo(&str, "%s[]", name);
 
 	tmprelids = bms_copy(relids);
 	while ((x = bms_first_member(tmprelids)) >= 0)
 	{
 		const char *relname;
 
-		resetStringInfo(&str);
-		appendStringInfo(&str, "%s[%d]", name, count);
-
 		relname = get_relation_name(root, x);
 
-		addDebugNodeAttribute(node, str.data, relname);
-
-		count++;
+		addDebugNodeAttributeArgs(node, str.data, "%d (%s)", x, relname);
 	}
 	bms_free(tmprelids);
 	pfree(str.data);
@@ -153,20 +185,45 @@ get_restrictclauses(DebugGraph *graph, PlannerInfo *root, List *clauses)
 	foreach(l, clauses)
 	{
 		RestrictInfo *c = lfirst(l);
+		DebugNode    *node_c;
 		const char  *aux;
-		DebugNode    *node_c = newDebugNodeByPointer(graph, c, "RestrictInfo");
+
+		Assert(IsA(c, RestrictInfo));
+
+		node_c = newDebugNodeByPointer(graph, c, "RestrictInfo");
 		Assert(node_c);
+		newDebugEdgeByName(graph, node->internal_name, node_c->internal_name,
+				"");
 
 		aux = get_expr((Node *) c->clause, root->parse->rtable);
 		addDebugNodeAttribute(node_c, "clause", aux);
 		pfree((void*)aux);
+		aux = get_expr((Node *) c->orclause, root->parse->rtable);
+		addDebugNodeAttribute(node_c, "orclause", aux);
+		pfree((void*)aux);
 
-		newDebugEdgeByName(graph, node->internal_name, node_c->internal_name,
-				"");
+		addDebugNodeAttributeArgs(node_c, "is_pushed_down", "%s",
+				booltostr(c->is_pushed_down));
+		addDebugNodeAttributeArgs(node_c, "outerjoin_delayed", "%s",
+				booltostr(c->outerjoin_delayed));
+		addDebugNodeAttributeArgs(node_c, "can_join", "%s",
+				booltostr(c->can_join));
+		addDebugNodeAttributeArgs(node_c, "pseudoconstant", "%s",
+				booltostr(c->pseudoconstant));
+		addDebugNodeAttributeArgs(node_c, "norm_selec", "%.4f", c->norm_selec);
+		addDebugNodeAttributeArgs(node_c, "outer_selec", "%.4f",
+				c->outer_selec);
+
 	}
 
 	return node;
 }
+
+static DebugNode* get_parampathinfo(DebugGraph *graph, PlannerInfo *root,
+		ParamPathInfo *param_info);
+static DebugNode* get_indexoptinfo(DebugGraph *graph, PlannerInfo *root,
+		IndexPath *path, IndexOptInfo *index_info);
+static double get_loop_count(PlannerInfo *root, Relids outer_relids);
 
 static DebugNode*
 get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
@@ -175,7 +232,38 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 	const char *ptype;
 	bool         join = false;
 	Path        *subpath = NULL;
-	int          i;
+	double      loops = 1.0;
+
+	if (!path)
+		return NULL;
+
+	node = newDebugNodeByPointer(graph, path, "");
+	Assert(node);
+	if (node->create_node_again)
+		return node;
+
+	addDebugNodeAttributeArgs(node, "mem address", "%p", path);
+	addDebugNodeAttributeArgs(node, "pathtype", "%d", path->pathtype);
+
+	newDebugEdgeByNode(graph, node, get_reloptinfo(graph, root, path->parent),
+			"parent");
+
+	newDebugEdgeByNode(graph, node,
+			get_parampathinfo(graph, root, path->param_info), "param_info");
+	if (path->param_info)
+		loops = get_loop_count(root, path->param_info->ppi_req_outer);
+	addDebugNodeAttributeArgs(node, "loops", "%.1lf", loops);
+
+	addDebugNodeAttributeArgs(node, "startup_cost", "%.2lf",
+			path->startup_cost);
+	addDebugNodeAttributeArgs(node, "total_cost", "%.2lf", path->total_cost);
+	addDebugNodeAttributeArgs(node, "rows", "%.0f", path->rows);
+
+	{
+		const char *aux = get_pathkeys(path->pathkeys, root->parse->rtable);
+		addDebugNodeAttribute(node, "pathkeys", aux);
+		pfree((void*)aux);
+	}
 
 	switch (nodeTag(path))
 	{
@@ -184,6 +272,40 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 			break;
 		case T_IndexPath:
 			ptype = "IdxScan";
+			{
+				IndexPath *idxpath = (IndexPath*)path;
+				Cost indexStartupCost=0, indexTotalCost=0, indexSelectivity=0,
+				     indexCorrelation=0;
+				newDebugEdgeByNode(graph, node,
+						get_indexoptinfo(graph, root, idxpath,
+								idxpath->indexinfo),
+						"indexinfo");
+				newDebugEdgeByNode(graph, node,
+						get_restrictclauses(graph, root, idxpath->indexclauses),
+						"indexclauses");
+				newDebugEdgeByNode(graph, node,
+						get_restrictclauses(graph, root, idxpath->indexquals),
+						"indexquals");
+				addDebugNodeAttributeArgs(node, "indexscandir", "%d",
+						idxpath->indexscandir);
+				if (idxpath->indexinfo)
+					OidFunctionCall7(idxpath->indexinfo->amcostestimate,
+									 PointerGetDatum(root),
+									 PointerGetDatum(path),
+									 Float8GetDatum(loops),
+									 PointerGetDatum(&indexStartupCost),
+									 PointerGetDatum(&indexTotalCost),
+									 PointerGetDatum(&indexSelectivity),
+									 PointerGetDatum(&indexCorrelation));
+				addDebugNodeAttributeArgs(node, "indexStartupCost", "%.2f",
+						indexStartupCost);
+				addDebugNodeAttributeArgs(node, "indextotalcost", "%.2f",
+						idxpath->indextotalcost);
+				addDebugNodeAttributeArgs(node, "indexselectivity", "%.4f",
+						idxpath->indexselectivity);
+				addDebugNodeAttributeArgs(node, "indexCorrelation", "%.2f",
+						indexCorrelation);
+			}
 			break;
 		case T_BitmapHeapPath:
 			ptype = "BitmapHeapScan";
@@ -205,6 +327,15 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 			break;
 		case T_MergeAppendPath:
 			ptype = "MergeAppend";
+			{
+				MergePath  *mp = (MergePath *) path;
+				addDebugNodeAttributeArgs(node, "outersortkeys", "%d",
+						((mp->outersortkeys) ? 1 : 0));
+				addDebugNodeAttributeArgs(node, "innersortkeys", "%d",
+						((mp->innersortkeys) ? 1 : 0));
+				addDebugNodeAttributeArgs(node, "materialize_inner", "%d",
+						((mp->materialize_inner) ? 1 : 0));
+			}
 			break;
 		case T_ResultPath:
 			ptype = "Result";
@@ -234,71 +365,27 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 			break;
 	}
 
-	node = newDebugNodeByPointer(graph, path, ptype);
-	Assert(node);
-
-	addDebugNodeAttributeArgs(node, "mem address", "%p", path);
-
-	if (path->parent)
-		add_relids(node, "parent->relids", root, path->parent->relids);
-
-	addDebugNodeAttributeArgs(node, "startup_cost", "%.2lf",
-			path->startup_cost);
-	addDebugNodeAttributeArgs(node, "total_cost", "%.2lf", path->total_cost);
-	addDebugNodeAttributeArgs(node, "rows", "%.0f", path->rows);
-
-	if (path->pathkeys)
-	{
-		const char *aux = get_pathkeys(path->pathkeys, root->parse->rtable);
-		addDebugNodeAttribute(node, "pathkeys", aux);
-		pfree((void*)aux);
-	}
-
-	if (path->parent->baserestrictinfo)
-	{
-		DebugNode  *node_aux = get_restrictclauses(graph, root,
-				path->parent->baserestrictinfo);
-		Assert(node_aux);
-		newDebugEdgeByName(graph, node->internal_name,
-				node_aux->internal_name, "parent->baserestrictinfo");
-	}
+	renameDebugNode(node, ptype);
 
 	if (join)
 	{
 		JoinPath   *jp = (JoinPath *) path;
-		DebugNode  *node_aux;
 
-		if (node_aux = get_restrictclauses(graph, root, jp->joinrestrictinfo))
-			newDebugEdgeByName(graph, node->internal_name,
-					node_aux->internal_name, "joinrestrictinfo");
+		newDebugEdgeByNode(graph, node,
+				get_restrictclauses(graph, root, jp->joinrestrictinfo),
+				"joinrestrictinfo");
 
-		if (IsA(path, MergePath))
-		{
-			MergePath  *mp = (MergePath *) path;
-			addDebugNodeAttributeArgs(node, "outersortkeys", "%d",
-					((mp->outersortkeys) ? 1 : 0));
-			addDebugNodeAttributeArgs(node, "innersortkeys", "%d",
-					((mp->innersortkeys) ? 1 : 0));
-			addDebugNodeAttributeArgs(node, "materialize_inner", "%d",
-					((mp->materialize_inner) ? 1 : 0));
-		}
-
-		node_aux = get_path(graph, root, jp->outerjoinpath);
-		newDebugEdgeByName(graph, node->internal_name,
-				node_aux->internal_name, "outerjoinpath");
-
-		node_aux = get_path(graph, root, jp->innerjoinpath);
-		newDebugEdgeByName(graph, node->internal_name,
-				node_aux->internal_name, "innerjoinpath");
+		newDebugEdgeByNode(graph, node,
+				get_path(graph, root, jp->outerjoinpath),
+				"outerjoinpath");
+		newDebugEdgeByNode(graph, node,
+				get_path(graph, root, jp->innerjoinpath),
+				"innerjoinpath");
 	}
 
 	if (subpath)
-	{
-		DebugNode  *node_aux;
-		node_aux = get_path(graph, root, subpath);
-		newDebugEdgeByName(graph, node->internal_name, node_aux->internal_name,
-				"subpath");
-	}
+		newDebugEdgeByNode(graph, node,
+				get_path(graph, root, subpath), "subpath");
 
 	return node;
 }
@@ -311,38 +398,43 @@ get_pathkeys(const List *pathkeys, const List *rtable)
 
 	initStringInfo(&str);
 
-	appendStringInfo(&str, "(");
-	foreach(i, pathkeys)
+	if (pathkeys)
 	{
-		PathKey    *pathkey = (PathKey *) lfirst(i);
-		EquivalenceClass *eclass;
-		ListCell   *k;
-		bool		first = true;
-
-		eclass = pathkey->pk_eclass;
-		/* chase up, in case pathkey is non-canonical */
-		while (eclass->ec_merged)
-			eclass = eclass->ec_merged;
-
 		appendStringInfo(&str, "(");
-		foreach(k, eclass->ec_members)
+		foreach(i, pathkeys)
 		{
-			const char *aux;
-			EquivalenceMember *mem = (EquivalenceMember *) lfirst(k);
+			PathKey    *pathkey = (PathKey *) lfirst(i);
+			EquivalenceClass *eclass;
+			ListCell   *k;
+			bool		first = true;
 
-			if (first)
-				first = false;
-			else
+			eclass = pathkey->pk_eclass;
+			/* chase up, in case pathkey is non-canonical */
+			while (eclass->ec_merged)
+				eclass = eclass->ec_merged;
+
+			appendStringInfo(&str, "(");
+			foreach(k, eclass->ec_members)
+			{
+				const char *aux;
+				EquivalenceMember *mem = (EquivalenceMember *) lfirst(k);
+
+				if (first)
+					first = false;
+				else
+					appendStringInfo(&str, ", ");
+				aux = get_expr((Node *) mem->em_expr, rtable);
+				appendStringInfo(&str, "%s", aux);
+				pfree((void*)aux);
+			}
+			appendStringInfo(&str, ")");
+			if (lnext(i))
 				appendStringInfo(&str, ", ");
-			aux = get_expr((Node *) mem->em_expr, rtable);
-			appendStringInfo(&str, "%s", aux);
-			pfree((void*)aux);
 		}
 		appendStringInfo(&str, ")");
-		if (lnext(i))
-			appendStringInfo(&str, ", ");
 	}
-	appendStringInfo(&str, ")");
+	else
+		appendStringInfoString(&str, "NULL");
 
 	return str.data; /*return (const char*) must be pfree'd*/
 }
@@ -469,4 +561,119 @@ get_expr(const Node *expr, const List *rtable)
 		appendStringInfo(&str, "unknown expr");
 
 	return str.data; /*return (const char*) must be pfree'd*/
+}
+
+static DebugNode*
+get_parampathinfo(DebugGraph *graph, PlannerInfo *root,
+		ParamPathInfo *param_info)
+{
+	DebugNode *node;
+
+	Assert(graph && root);
+
+	if (!param_info)
+		return NULL;
+
+	Assert(IsA(param_info, ParamPathInfo));
+	node = newDebugNodeByPointer(graph, param_info, "ParamPathInfo");
+	Assert(node);
+
+	add_relids(node, "ppi_req_outer", root, param_info->ppi_req_outer);
+	addDebugNodeAttributeArgs(node, "ppi_rows", "%lf", param_info->ppi_rows);
+
+	newDebugEdgeByNode(graph, node,
+			get_restrictclauses(graph, root, param_info->ppi_clauses),
+			"ppi_clauses");
+
+	return node;
+}
+
+static DebugNode*
+get_indexoptinfo(DebugGraph *graph, PlannerInfo *root,
+		IndexPath *path, IndexOptInfo *index_info)
+{
+	DebugNode *node;
+
+	Assert(graph && root);
+
+	if (!index_info)
+		return NULL;
+
+	Assert(IsA(index_info, IndexOptInfo));
+	node = newDebugNodeByPointer(graph, (void*)index_info, "IndexOptInfo");
+	Assert(node);
+
+	/* NB: this isn't a complete set of fields */
+	//WRITE_OID_FIELD(indexoid);
+
+	newDebugEdgeByNode(graph, node,
+			get_reloptinfo(graph, root, index_info->rel), "rel");
+
+	/* Do NOT print rel field, else infinite recursion */
+	addDebugNodeAttributeArgs(node, "pages", "%u", index_info->pages);
+	addDebugNodeAttributeArgs(node, "tuples", "%.0lf", index_info->tuples);
+
+	addDebugNodeAttributeArgs(node, "tree_height", "%d", index_info->tree_height);
+	addDebugNodeAttributeArgs(node, "ncolumns", "%d", index_info->ncolumns);
+	addDebugNodeAttributeArgs(node, "relam", "%u", index_info->relam);
+
+	//List	   *indpred;		/* predicate if a partial index, else NIL */
+	//List	   *indextlist;		/* targetlist representing index columns */
+
+	addDebugNodeAttributeArgs(node, "reverse_sort", "%s",
+			booltostr(index_info->reverse_sort));
+	addDebugNodeAttributeArgs(node, "nulls_first", "%s",
+			booltostr(index_info->nulls_first));
+	addDebugNodeAttributeArgs(node, "predOK", "%s",
+			booltostr(index_info->predOK));
+	addDebugNodeAttributeArgs(node, "unique", "%s",
+			booltostr(index_info->unique));
+	addDebugNodeAttributeArgs(node, "immediate", "%s",
+			booltostr(index_info->immediate));
+	addDebugNodeAttributeArgs(node, "hypothetical", "%s",
+			booltostr(index_info->hypothetical));
+	addDebugNodeAttributeArgs(node, "canreturn", "%s",
+			booltostr(index_info->canreturn));
+
+	return node;
+}
+
+static double
+get_loop_count(PlannerInfo *root, Relids outer_relids)
+{
+	double		result = 1.0;
+
+	/* For a non-parameterized path, just return 1.0 quickly */
+	if (outer_relids != NULL)
+	{
+		int			relid;
+
+		/* Need a working copy since bms_first_member is destructive */
+		outer_relids = bms_copy(outer_relids);
+		while ((relid = bms_first_member(outer_relids)) >= 0)
+		{
+			RelOptInfo *outer_rel;
+
+			/* Paranoia: ignore bogus relid indexes */
+			if (relid >= root->simple_rel_array_size)
+				continue;
+			outer_rel = root->simple_rel_array[relid];
+			if (outer_rel == NULL)
+				continue;
+			Assert(outer_rel->relid == relid);	/* sanity check on array */
+
+			/* Other relation could be proven empty, if so ignore */
+			if (IS_DUMMY_REL(outer_rel))
+				continue;
+
+			/* Otherwise, rel's rows estimate should be valid by now */
+			Assert(outer_rel->rows > 0);
+
+			/* Remember smallest row count estimate among the outer rels */
+			if (result == 1.0 || result > outer_rel->rows)
+				result = outer_rel->rows;
+		}
+		bms_free(outer_relids);
+	}
+	return result;
 }

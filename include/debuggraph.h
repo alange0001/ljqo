@@ -42,6 +42,7 @@ typedef struct DebugNode {
 	int attributeMemorySpace;
 	char** attributeNames;
 	char** attributeValues;
+	bool create_node_again; /* true if tried to recreate the node */
 } DebugNode;
 
 typedef struct DebugEdge {
@@ -68,12 +69,15 @@ extern DebugNode* newDebugNode(DebugGraph* graph, const char* internal_name,
 		const char* name);
 extern DebugNode* newDebugNodeByPointer(DebugGraph* graph, void* ptr,
 		const char* name);
+extern void renameDebugNode(DebugNode* node, const char* new_name);
 extern void addDebugNodeAttribute(DebugNode* node, const char* name,
 		const char* value);
 extern void addDebugNodeAttributeArgs(DebugNode* node, const char* name,
 		const char* value,...);
 extern void newDebugEdgeByName(DebugGraph* graph, const char* source,
 		const char* destination, const char* label);
+extern void newDebugEdgeByNode(DebugGraph* graph, DebugNode* source,
+		DebugNode* destination, const char* label);
 
 /* ///////////////////////// GRAPH PRINTING ///////////////////////////////// */
 
