@@ -87,6 +87,9 @@ get_reloptinfo(DebugGraph *graph, PlannerInfo *root, RelOptInfo *rel)
 	addDebugNodeAttributeArgs(node, "width", "%d", rel->width);
 	addDebugNodeAttributeArgs(node, "consider_startup", "%s",
 			booltostr(rel->consider_startup));
+
+	addDebugNodeAttributeArgs(node, "relid", "%u", rel->relid);
+	addDebugNodeAttributeArgs(node, "reltablespace", "%u", rel->reltablespace);
 	addDebugNodeAttributeArgs(node, "tuples", "%.0f", rel->tuples);
 	addDebugNodeAttributeArgs(node, "allvisfrac", "%.4f", rel->allvisfrac);
 	addDebugNodeAttributeArgs(node, "pages", "%u", rel->pages);
@@ -195,6 +198,9 @@ get_restrictclauses(DebugGraph *graph, PlannerInfo *root, List *clauses)
 		newDebugEdgeByName(graph, node->internal_name, node_c->internal_name,
 				"");
 
+		if (node_c->create_node_again)
+			continue;
+
 		aux = get_expr((Node *) c->clause, root->parse->rtable);
 		addDebugNodeAttribute(node_c, "clause", aux);
 		pfree((void*)aux);
@@ -210,6 +216,10 @@ get_restrictclauses(DebugGraph *graph, PlannerInfo *root, List *clauses)
 				booltostr(c->can_join));
 		addDebugNodeAttributeArgs(node_c, "pseudoconstant", "%s",
 				booltostr(c->pseudoconstant));
+		addDebugNodeAttributeArgs(node_c, "eval_cost.startup", "%lf",
+				c->eval_cost.startup);
+		addDebugNodeAttributeArgs(node_c, "eval_cost.per_tuple", "%lf",
+				c->eval_cost.per_tuple);
 		addDebugNodeAttributeArgs(node_c, "norm_selec", "%.4f", c->norm_selec);
 		addDebugNodeAttributeArgs(node_c, "outer_selec", "%.4f",
 				c->outer_selec);
@@ -609,13 +619,15 @@ get_indexoptinfo(DebugGraph *graph, PlannerInfo *root,
 	newDebugEdgeByNode(graph, node,
 			get_reloptinfo(graph, root, index_info->rel), "rel");
 
-	/* Do NOT print rel field, else infinite recursion */
+	addDebugNodeAttributeArgs(node, "indexoid", "%u", index_info->indexoid);
+	addDebugNodeAttributeArgs(node, "reltablespace", "%u", index_info->reltablespace);
 	addDebugNodeAttributeArgs(node, "pages", "%u", index_info->pages);
 	addDebugNodeAttributeArgs(node, "tuples", "%.0lf", index_info->tuples);
 
 	addDebugNodeAttributeArgs(node, "tree_height", "%d", index_info->tree_height);
 	addDebugNodeAttributeArgs(node, "ncolumns", "%d", index_info->ncolumns);
 	addDebugNodeAttributeArgs(node, "relam", "%u", index_info->relam);
+	addDebugNodeAttributeArgs(node, "amcostestimate", "%u", index_info->amcostestimate);
 
 	//List	   *indpred;		/* predicate if a partial index, else NIL */
 	//List	   *indextlist;		/* targetlist representing index columns */
