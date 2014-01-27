@@ -65,6 +65,7 @@ typedef struct DebugGraph {
 
 extern DebugGraph* createDebugGraph(const char *name);
 extern void destroyDebugGraph(DebugGraph* graph);
+extern void renameDebugGraph(DebugGraph* graph, const char* new_name);
 extern DebugNode* newDebugNode(DebugGraph* graph, const char* internal_name,
 		const char* name);
 extern DebugNode* newDebugNodeByPointer(DebugGraph* graph, void* ptr,
@@ -82,6 +83,7 @@ extern void newDebugEdgeByNode(DebugGraph* graph, DebugNode* source,
 /* ///////////////////////// GRAPH PRINTING ///////////////////////////////// */
 
 extern void printDebugGraph(DebugGraph* graph);
+extern void printDebugGraphAsOctaveStruct(DebugGraph* graph);
 
 #endif /*ENABLE_DEBUGGRAPH*/
 

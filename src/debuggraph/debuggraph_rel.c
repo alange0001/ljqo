@@ -38,6 +38,7 @@
 #include <utils/syscache.h>
 #include <optimizer/clauses.h>
 
+static DebugNode* get_plannerinfo(DebugGraph *graph, PlannerInfo *root);
 static DebugNode* get_reloptinfo(DebugGraph *graph, PlannerInfo *root,
 		RelOptInfo *rel);
 
@@ -48,9 +49,13 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 
 	Assert(rel && IsA(rel, RelOptInfo));
 
+	get_plannerinfo(graph, root);
 	get_reloptinfo(graph, root, rel);
 
 	printDebugGraph(graph);
+
+	renameDebugGraph(graph, "nodes");
+	printDebugGraphAsOctaveStruct(graph);
 
 	destroyDebugGraph(graph);
 }
@@ -59,10 +64,74 @@ static void add_relids(DebugNode *node, const char *name,
 		PlannerInfo *root, Relids relids);
 static DebugNode* get_restrictclauses(DebugGraph *graph, PlannerInfo *root,
 		List *clauses);
+
+static DebugNode* get_plannerinfo(DebugGraph *graph, PlannerInfo *root)
+{
+	DebugNode  *node;
+
+	if(!root)
+		return NULL;
+
+	Assert(graph);
+	Assert(IsA(root, PlannerInfo));
+
+	node  = newDebugNodeByPointer(graph, root, "PlannerInfo");
+	Assert(node);
+	if (node->create_node_again)
+		return node;
+
+	addDebugNodeAttributeArgs(node, "type", "%d", root->type);
+
+	addDebugNodeAttributeArgs(node, "query_level", "%u", root->query_level);
+
+	newDebugEdgeByNode(graph, node,
+			get_plannerinfo(graph, root->parent_root), "parent_root");
+
+	add_relids(node, "all_baserels", root, root->all_baserels);
+
+	newDebugEdgeByNode(graph, node,
+			get_restrictclauses(graph, root, root->left_join_clauses),
+			"left_join_clauses");
+	newDebugEdgeByNode(graph, node,
+			get_restrictclauses(graph, root, root->right_join_clauses),
+			"right_join_clauses");
+	newDebugEdgeByNode(graph, node,
+			get_restrictclauses(graph, root, root->full_join_clauses),
+			"full_join_clauses");
+
+	{
+		DebugNode *list = (root->initial_rels)
+					?newDebugNodeByPointer(graph, root->initial_rels,
+							"initial_rels")
+					:NULL;
+		newDebugEdgeByNode(graph, node, list, "initial_rels");
+		if (list)
+		{
+			ListCell *lc;
+			foreach(lc, root->initial_rels)
+			{
+				RelOptInfo *rel = (RelOptInfo*) lfirst(lc);
+				DebugNode *node_rel = get_reloptinfo(graph, root, rel);
+				newDebugEdgeByNode(graph, list, node_rel, "");
+			}
+		}
+	}
+
+	addDebugNodeAttributeArgs(node, "total_table_pages", "%lf",
+			root->total_table_pages);
+	addDebugNodeAttributeArgs(node, "tuple_fraction", "%lf",
+			root->tuple_fraction);
+	addDebugNodeAttributeArgs(node, "limit_tuples", "%lf",
+			root->limit_tuples);
+
+	return node;
+}
+
 static DebugNode* get_path(DebugGraph *graph, PlannerInfo *root,
 		Path *path);
 static const char* get_pathkeys(const List *pathkeys, const List *rtable);
 static const char* get_expr(const Node *expr, const List *rtable);
+static DebugNode* get_tablespace(DebugGraph *graph, Oid tablespace);
 
 #define booltostr(x)  ((x) ? "true" : "false")
 
@@ -81,25 +150,23 @@ get_reloptinfo(DebugGraph *graph, PlannerInfo *root, RelOptInfo *rel)
 	if (node->create_node_again)
 		return node;
 
+	addDebugNodeAttributeArgs(node, "type", "%d", rel->type);
+
 	add_relids(node, "relids", root, rel->relids);
 	add_relids(node, "lateral_relids", root, rel->lateral_relids);
-	addDebugNodeAttributeArgs(node, "rows", "%.0f", rel->rows);
+	addDebugNodeAttributeArgs(node, "rows", "%lf", rel->rows);
 	addDebugNodeAttributeArgs(node, "width", "%d", rel->width);
 	addDebugNodeAttributeArgs(node, "consider_startup", "%s",
 			booltostr(rel->consider_startup));
 
 	addDebugNodeAttributeArgs(node, "relid", "%u", rel->relid);
-	addDebugNodeAttributeArgs(node, "reltablespace", "%u", rel->reltablespace);
-	addDebugNodeAttributeArgs(node, "tuples", "%.0f", rel->tuples);
-	addDebugNodeAttributeArgs(node, "allvisfrac", "%.4f", rel->allvisfrac);
+	//addDebugNodeAttributeArgs(node, "reltablespace", "%u", rel->reltablespace);
+	newDebugEdgeByNode(graph, node,
+			get_tablespace(graph, rel->reltablespace), "reltablespace");
+	addDebugNodeAttributeArgs(node, "rtekind", "%d", rel->rtekind);
+	addDebugNodeAttributeArgs(node, "tuples", "%lf", rel->tuples);
+	addDebugNodeAttributeArgs(node, "allvisfrac", "%lf", rel->allvisfrac);
 	addDebugNodeAttributeArgs(node, "pages", "%u", rel->pages);
-
-	newDebugEdgeByNode(graph, node,
-			get_restrictclauses(graph, root, rel->baserestrictinfo),
-			"baserestrictinfo");
-	newDebugEdgeByNode(graph, node,
-			get_restrictclauses(graph, root, rel->joininfo),
-			"joininfo");
 
 	if (rel->pathlist)
 	{
@@ -108,6 +175,7 @@ get_reloptinfo(DebugGraph *graph, PlannerInfo *root, RelOptInfo *rel)
 				"List");
 
 		Assert(node_list);
+		addDebugNodeAttributeArgs(node_list, "type", "%d", rel->pathlist->type);
 		newDebugEdgeByName(graph, node->internal_name, node_list->internal_name,
 				"pathlist");
 
@@ -127,8 +195,22 @@ get_reloptinfo(DebugGraph *graph, PlannerInfo *root, RelOptInfo *rel)
 									n->internal_name, "cheapest_total_path");
 		}
 	}
+
+	newDebugEdgeByNode(graph, node,
+			get_restrictclauses(graph, root, rel->baserestrictinfo),
+			"baserestrictinfo");
+	addDebugNodeAttributeArgs(node, "baserestrictcost.startup", "%lf",
+			rel->baserestrictcost.startup);
+	addDebugNodeAttributeArgs(node, "baserestrictcost.per_tuple", "%lf",
+			rel->baserestrictcost.per_tuple);
+	newDebugEdgeByNode(graph, node,
+			get_restrictclauses(graph, root, rel->joininfo),
+			"joininfo");
 	addDebugNodeAttributeArgs(node, "has_eclass_joins", "%s",
 			booltostr(rel->has_eclass_joins));
+
+	/* pseudo attribute. Is there more than one root per reloptinfo? */
+	newDebugEdgeByNode(graph, node, get_plannerinfo(graph, root), "_root");
 
 	return node;
 }
@@ -147,30 +229,67 @@ get_relation_name(PlannerInfo *root, int relid)
 static void
 add_relids(DebugNode *node, const char *name, PlannerInfo *root, Relids relids)
 {
-	StringInfoData  str;
-	Relids		tmprelids;
-	int			x;
-
 	if (!relids)
 	{
 		addDebugNodeAttribute(node, name, "NULL");
-		return;
 	}
-
-	initStringInfo(&str);
-	appendStringInfo(&str, "%s[]", name);
-
-	tmprelids = bms_copy(relids);
-	while ((x = bms_first_member(tmprelids)) >= 0)
+	else
 	{
-		const char *relname;
+		StringInfoData  str;
+		Relids		tmprelids;
+		int			x;
 
-		relname = get_relation_name(root, x);
+		initStringInfo(&str);
 
-		addDebugNodeAttributeArgs(node, str.data, "%d (%s)", x, relname);
+		tmprelids = bms_copy(relids);
+		while ((x = bms_first_member(tmprelids)) >= 0)
+		{
+			const char *relname;
+
+			resetStringInfo(&str);
+			appendStringInfo(&str, "%s[%d]", name, x);
+
+			relname = get_relation_name(root, x);
+
+			addDebugNodeAttribute(node, str.data, relname);
+		}
+		bms_free(tmprelids);
+		pfree(str.data);
 	}
-	bms_free(tmprelids);
-	pfree(str.data);
+}
+
+static DebugNode*
+get_tablespace(DebugGraph *graph, Oid tablespace)
+{
+	DebugNode *node;
+	Assert(graph);
+	Assert(tablespace >= 0);
+
+	{
+		StringInfoData str;
+		initStringInfo(&str);
+
+		appendStringInfo(&str, "tablespace_%u", tablespace);
+		node = newDebugNode(graph, str.data, "TableSpace");
+		Assert(node);
+
+		pfree(str.data);
+	}
+
+	if (!node->create_node_again)
+	{
+		addDebugNodeAttributeArgs(node, "oid", "%u", tablespace);
+		addDebugNodeAttributeArgs(node, "name", "%s",
+				get_tablespace_name(tablespace));
+		{
+			Cost c_rand, c_seq;
+			get_tablespace_page_costs(tablespace, &c_rand, &c_seq);
+			addDebugNodeAttributeArgs(node, "seq_page_cost", "%lf", c_seq);
+			addDebugNodeAttributeArgs(node, "random_page_cost", "%lf", c_rand);
+		}
+	}
+
+	return node;
 }
 
 static DebugNode*
@@ -185,6 +304,11 @@ get_restrictclauses(DebugGraph *graph, PlannerInfo *root, List *clauses)
 	node = newDebugNodeByPointer(graph, clauses, "List");
 	Assert(node);
 
+	if (node->create_node_again)
+		return node;
+
+	addDebugNodeAttributeArgs(node, "type", "%d", clauses->type);
+
 	foreach(l, clauses)
 	{
 		RestrictInfo *c = lfirst(l);
@@ -195,6 +319,7 @@ get_restrictclauses(DebugGraph *graph, PlannerInfo *root, List *clauses)
 
 		node_c = newDebugNodeByPointer(graph, c, "RestrictInfo");
 		Assert(node_c);
+		addDebugNodeAttributeArgs(node_c, "type", "%d", c->type);
 		newDebugEdgeByName(graph, node->internal_name, node_c->internal_name,
 				"");
 
@@ -220,8 +345,8 @@ get_restrictclauses(DebugGraph *graph, PlannerInfo *root, List *clauses)
 				c->eval_cost.startup);
 		addDebugNodeAttributeArgs(node_c, "eval_cost.per_tuple", "%lf",
 				c->eval_cost.per_tuple);
-		addDebugNodeAttributeArgs(node_c, "norm_selec", "%.4f", c->norm_selec);
-		addDebugNodeAttributeArgs(node_c, "outer_selec", "%.4f",
+		addDebugNodeAttributeArgs(node_c, "norm_selec", "%lf", c->norm_selec);
+		addDebugNodeAttributeArgs(node_c, "outer_selec", "%lf",
 				c->outer_selec);
 
 	}
@@ -252,7 +377,7 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 	if (node->create_node_again)
 		return node;
 
-	addDebugNodeAttributeArgs(node, "mem address", "%p", path);
+	addDebugNodeAttributeArgs(node, "type", "%d", path->type);
 	addDebugNodeAttributeArgs(node, "pathtype", "%d", path->pathtype);
 
 	newDebugEdgeByNode(graph, node, get_reloptinfo(graph, root, path->parent),
@@ -262,12 +387,12 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 			get_parampathinfo(graph, root, path->param_info), "param_info");
 	if (path->param_info)
 		loops = get_loop_count(root, path->param_info->ppi_req_outer);
-	addDebugNodeAttributeArgs(node, "loops", "%.1lf", loops);
+	addDebugNodeAttributeArgs(node, "loops", "%lf", loops);
 
-	addDebugNodeAttributeArgs(node, "startup_cost", "%.2lf",
+	addDebugNodeAttributeArgs(node, "startup_cost", "%lf",
 			path->startup_cost);
-	addDebugNodeAttributeArgs(node, "total_cost", "%.2lf", path->total_cost);
-	addDebugNodeAttributeArgs(node, "rows", "%.0f", path->rows);
+	addDebugNodeAttributeArgs(node, "total_cost", "%lf", path->total_cost);
+	addDebugNodeAttributeArgs(node, "rows", "%lf", path->rows);
 
 	{
 		const char *aux = get_pathkeys(path->pathkeys, root->parse->rtable);
@@ -286,6 +411,8 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 				IndexPath *idxpath = (IndexPath*)path;
 				Cost indexStartupCost=0, indexTotalCost=0, indexSelectivity=0,
 				     indexCorrelation=0;
+				addDebugNodeAttributeArgs(node, "indexonly", "%s",
+						booltostr(idxpath->path.pathtype == T_IndexOnlyScan));
 				newDebugEdgeByNode(graph, node,
 						get_indexoptinfo(graph, root, idxpath,
 								idxpath->indexinfo),
@@ -296,6 +423,9 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 				newDebugEdgeByNode(graph, node,
 						get_restrictclauses(graph, root, idxpath->indexquals),
 						"indexquals");
+				newDebugEdgeByNode(graph, node,
+						get_restrictclauses(graph, root, idxpath->indexorderbys),
+						"indexorderbys");
 				addDebugNodeAttributeArgs(node, "indexscandir", "%d",
 						idxpath->indexscandir);
 				if (idxpath->indexinfo)
@@ -307,13 +437,13 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 									 PointerGetDatum(&indexTotalCost),
 									 PointerGetDatum(&indexSelectivity),
 									 PointerGetDatum(&indexCorrelation));
-				addDebugNodeAttributeArgs(node, "indexStartupCost", "%.2f",
+				addDebugNodeAttributeArgs(node, "indexstartupcost", "%lf",
 						indexStartupCost);
-				addDebugNodeAttributeArgs(node, "indextotalcost", "%.2f",
+				addDebugNodeAttributeArgs(node, "indextotalcost", "%lf",
 						idxpath->indextotalcost);
-				addDebugNodeAttributeArgs(node, "indexselectivity", "%.4f",
+				addDebugNodeAttributeArgs(node, "indexselectivity", "%lf",
 						idxpath->indexselectivity);
-				addDebugNodeAttributeArgs(node, "indexCorrelation", "%.2f",
+				addDebugNodeAttributeArgs(node, "indexcorrelation", "%lf",
 						indexCorrelation);
 			}
 			break;
@@ -588,6 +718,7 @@ get_parampathinfo(DebugGraph *graph, PlannerInfo *root,
 	node = newDebugNodeByPointer(graph, param_info, "ParamPathInfo");
 	Assert(node);
 
+	addDebugNodeAttributeArgs(node, "type", "%d", param_info->type);
 	add_relids(node, "ppi_req_outer", root, param_info->ppi_req_outer);
 	addDebugNodeAttributeArgs(node, "ppi_rows", "%lf", param_info->ppi_rows);
 
@@ -613,6 +744,8 @@ get_indexoptinfo(DebugGraph *graph, PlannerInfo *root,
 	node = newDebugNodeByPointer(graph, (void*)index_info, "IndexOptInfo");
 	Assert(node);
 
+	addDebugNodeAttributeArgs(node, "type", "%d", index_info->type);
+
 	/* NB: this isn't a complete set of fields */
 	//WRITE_OID_FIELD(indexoid);
 
@@ -620,9 +753,11 @@ get_indexoptinfo(DebugGraph *graph, PlannerInfo *root,
 			get_reloptinfo(graph, root, index_info->rel), "rel");
 
 	addDebugNodeAttributeArgs(node, "indexoid", "%u", index_info->indexoid);
-	addDebugNodeAttributeArgs(node, "reltablespace", "%u", index_info->reltablespace);
+	//addDebugNodeAttributeArgs(node, "reltablespace", "%u", index_info->reltablespace);
+	newDebugEdgeByNode(graph, node,
+			get_tablespace(graph, index_info->reltablespace), "reltablespace");
 	addDebugNodeAttributeArgs(node, "pages", "%u", index_info->pages);
-	addDebugNodeAttributeArgs(node, "tuples", "%.0lf", index_info->tuples);
+	addDebugNodeAttributeArgs(node, "tuples", "%lf", index_info->tuples);
 
 	addDebugNodeAttributeArgs(node, "tree_height", "%d", index_info->tree_height);
 	addDebugNodeAttributeArgs(node, "ncolumns", "%d", index_info->ncolumns);

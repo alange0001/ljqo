@@ -84,6 +84,16 @@ destroyDebugGraph(DebugGraph* graph)
 	pfree(graph);
 }
 
+void renameDebugGraph(DebugGraph* graph, const char* new_name)
+{
+	char *aux = copyString(new_name);
+
+	Assert(graph);
+
+	pfree(graph->name);
+	graph->name = aux;
+}
+
 static DebugNode* findDebugNodeByInternalName(DebugGraph *graph,
 		const char *internal_name);
 static DebugNode* createDebugNode( const char* internal_name,
@@ -128,10 +138,12 @@ newDebugNodeByPointer(DebugGraph* graph, void* ptr, const char* name)
 
 void renameDebugNode(DebugNode* node, const char* new_name)
 {
+	char *aux = copyString(new_name);
+
 	Assert(node);
 
 	pfree(node->name);
-	node->name = copyString(new_name);
+	node->name = aux;
 }
 
 static DebugEdge* createDebugEdge( const char* source,
@@ -484,16 +496,9 @@ strreplaceone(StringInfo dest, const char *orign,
 }
 
 static const char*
-htmlSpecialChars(StringInfo str_ret, const char *str)
+find_replace_substrings(StringInfo str_ret, const char *str,
+		const char *find_replace[][2])
 {
-	const char *find_replace[][2] = {
-			{">", "&gt;"},
-			{"<", "&lt;"},
-			{"{", "\\{"},
-			{"}", "\\}"},
-			{NULL, NULL}
-		};
-
 	Assert(str_ret && str);
 
 	resetStringInfo(str_ret);
@@ -519,4 +524,92 @@ htmlSpecialChars(StringInfo str_ret, const char *str)
 		}
 	}
 	return str_ret->data;
+}
+
+static const char*
+htmlSpecialChars(StringInfo str_ret, const char *str)
+{
+	const char *find_replace[][2] = {
+			{">", "&gt;"},
+			{"<", "&lt;"},
+			{"{", "\\{"},
+			{"}", "\\}"},
+			{NULL, NULL}
+		};
+	return find_replace_substrings(str_ret, str, find_replace);
+}
+
+/* //////////////// Octave Variable Structure Generation //////////////////// */
+
+#define PRINT_OCTAVE_NAME(graph, node, name_attr) \
+		DEBUGGRAPH_PRINTF(graph, "%s.(\"%s\").(\""CppAsString(name_attr)\
+				"\") = \"%s\";", \
+				graph->name, graph->node->internal_name, \
+				graph->node->name_attr)
+#define PRINT_OCTAVE_ATTRIBUTE(graph, node, index) \
+		DEBUGGRAPH_PRINTF(graph, "%s.(\"%s\").(\"%s\") = \"%s\";", \
+				graph->name, graph->node->internal_name, \
+				graph->node->attributeNames[index], \
+				octaveString(&aux1, graph->node->attributeValues[index]))
+#define PRINT_OCTAVE_EDGE(graph, edge) \
+		DEBUGGRAPH_PRINTF(graph, "%s.(\"%s\").(\"%s\") = \"%s\";", \
+				graph->name, graph->edge->source, \
+				graph->edge->label, \
+				graph->edge->destination)
+#define PRINT_OCTAVE_UNNAMED_EDGE(graph, edge) \
+		DEBUGGRAPH_PRINTF(graph, "%s.(\"%s\").(\"unnamed_refs\")" \
+				"{++%s.(\"%s\").(\"unnamed_refs_count\")} = \"%s\";", \
+				graph->name, graph->edge->source, \
+				graph->name, graph->edge->source, \
+				graph->edge->destination)
+
+static const char* octaveString(StringInfo str_ret,
+		const char *str);
+
+void printDebugGraphAsOctaveStruct(DebugGraph* graph)
+{
+	StringInfoData aux1;
+	int i,j;
+
+	Assert(graph);
+
+	initStringInfo(&aux1);
+
+	DEBUGGRAPH_PRINTF(graph, "global %s = struct();", graph->name);
+
+	for( i=0; i<graph->nodeCount; i++ )
+	{
+		DEBUGGRAPH_PRINTF(graph, "%s.(\"%s\") = struct();", graph->name,
+				graph->nodes[i]->internal_name);
+		PRINT_OCTAVE_NAME(graph, nodes[i], internal_name);
+		PRINT_OCTAVE_NAME(graph, nodes[i], name);
+		DEBUGGRAPH_PRINTF(graph, "%s.(\"%s\").(\"unnamed_refs_count\") = 0;",
+				graph->name, graph->nodes[i]->internal_name);
+		DEBUGGRAPH_PRINTF(graph, "%s.(\"%s\").(\"unnamed_refs\") = cell();",
+				graph->name, graph->nodes[i]->internal_name);
+
+		for( j=0; j<graph->nodes[i]->attributeCount; j++ )
+		{
+			PRINT_OCTAVE_ATTRIBUTE(graph, nodes[i], j);
+		}
+	}
+	for( i=0; i<graph->edgeCount; i++ )
+	{
+		if (graph->edges[i]->label[0] != '\0')
+			PRINT_OCTAVE_EDGE(graph, edges[i]);
+		else
+			PRINT_OCTAVE_UNNAMED_EDGE(graph, edges[i]);
+	}
+
+	pfree(aux1.data);
+}
+
+static const char*
+octaveString(StringInfo str_ret, const char *str)
+{
+	const char *find_replace[][2] = {
+			{"\"", "\\\""},
+			{NULL, NULL}
+		};
+	return find_replace_substrings(str_ret, str, find_replace);
 }
