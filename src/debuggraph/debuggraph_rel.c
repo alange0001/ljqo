@@ -37,7 +37,9 @@
 #include <utils/lsyscache.h>
 #include <utils/syscache.h>
 #include <optimizer/clauses.h>
+#include <optimizer/cost.h>
 
+static DebugNode* get_params(DebugGraph *graph);
 static DebugNode* get_plannerinfo(DebugGraph *graph, PlannerInfo *root);
 static DebugNode* get_reloptinfo(DebugGraph *graph, PlannerInfo *root,
 		RelOptInfo *rel);
@@ -49,6 +51,7 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 
 	Assert(rel && IsA(rel, RelOptInfo));
 
+	get_params(graph);
 	get_plannerinfo(graph, root);
 	get_reloptinfo(graph, root, rel);
 
@@ -58,6 +61,53 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 	printDebugGraphAsOctaveStruct(graph);
 
 	destroyDebugGraph(graph);
+}
+
+#define booltostr(x)  ((x) ? "true" : "false")
+
+static DebugNode* get_params(DebugGraph *graph)
+{
+	DebugNode *node;
+
+	node = newDebugNode(graph, "params", "params");
+
+	addDebugNodeAttributeArgs(node, "seq_page_cost", "%lf", seq_page_cost);
+	addDebugNodeAttributeArgs(node, "random_page_cost", "%lf",
+			random_page_cost);
+	addDebugNodeAttributeArgs(node, "cpu_tuple_cost", "%lf", cpu_tuple_cost);
+	addDebugNodeAttributeArgs(node, "cpu_index_tuple_cost", "%lf",
+			cpu_index_tuple_cost);
+	addDebugNodeAttributeArgs(node, "cpu_operator_cost", "%lf",
+			cpu_operator_cost);
+
+	addDebugNodeAttributeArgs(node, "effective_cache_size", "%d", effective_cache_size);
+
+	addDebugNodeAttributeArgs(node, "disable_cost", "%lf", disable_cost);
+
+	addDebugNodeAttributeArgs(node, "enable_seqscan", "%s",
+			booltostr(enable_seqscan));
+	addDebugNodeAttributeArgs(node, "enable_indexscan", "%s",
+			booltostr(enable_indexscan));
+	addDebugNodeAttributeArgs(node, "enable_indexonlyscan", "%s",
+			booltostr(enable_indexonlyscan));
+	addDebugNodeAttributeArgs(node, "enable_bitmapscan", "%s",
+			booltostr(enable_bitmapscan));
+	addDebugNodeAttributeArgs(node, "enable_tidscan", "%s",
+			booltostr(enable_tidscan));
+	addDebugNodeAttributeArgs(node, "enable_sort", "%s",
+			booltostr(enable_sort));
+	addDebugNodeAttributeArgs(node, "enable_hashagg", "%s",
+			booltostr(enable_hashagg));
+	addDebugNodeAttributeArgs(node, "enable_nestloop", "%s",
+			booltostr(enable_nestloop));
+	addDebugNodeAttributeArgs(node, "enable_material", "%s",
+			booltostr(enable_material));
+	addDebugNodeAttributeArgs(node, "enable_mergejoin", "%s",
+			booltostr(enable_mergejoin));
+	addDebugNodeAttributeArgs(node, "enable_hashjoin", "%s",
+			booltostr(enable_hashjoin));
+
+	return node;
 }
 
 static void add_relids(DebugNode *node, const char *name,
@@ -132,8 +182,6 @@ static DebugNode* get_path(DebugGraph *graph, PlannerInfo *root,
 static const char* get_pathkeys(const List *pathkeys, const List *rtable);
 static const char* get_expr(const Node *expr, const List *rtable);
 static DebugNode* get_tablespace(DebugGraph *graph, Oid tablespace);
-
-#define booltostr(x)  ((x) ? "true" : "false")
 
 static DebugNode*
 get_reloptinfo(DebugGraph *graph, PlannerInfo *root, RelOptInfo *rel)
@@ -377,6 +425,7 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 	if (node->create_node_again)
 		return node;
 
+	addDebugNodeAttributeArgs(node, "address", "%p", path);
 	addDebugNodeAttributeArgs(node, "type", "%d", path->type);
 	addDebugNodeAttributeArgs(node, "pathtype", "%d", path->pathtype);
 
@@ -441,9 +490,9 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 						indexStartupCost);
 				addDebugNodeAttributeArgs(node, "indextotalcost", "%lf",
 						idxpath->indextotalcost);
-				addDebugNodeAttributeArgs(node, "indexselectivity", "%lf",
+				addDebugNodeAttributeArgs(node, "indexselectivity", "%le",
 						idxpath->indexselectivity);
-				addDebugNodeAttributeArgs(node, "indexcorrelation", "%lf",
+				addDebugNodeAttributeArgs(node, "indexcorrelation", "%le",
 						indexCorrelation);
 			}
 			break;

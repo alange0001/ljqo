@@ -547,7 +547,7 @@ htmlSpecialChars(StringInfo str_ret, const char *str)
 				graph->name, graph->node->internal_name, \
 				graph->node->name_attr)
 #define PRINT_OCTAVE_ATTRIBUTE(graph, node, index) \
-		DEBUGGRAPH_PRINTF(graph, "%s.(\"%s\").(\"%s\") = \"%s\";", \
+		DEBUGGRAPH_PRINTF(graph, "%s.(\"%s\").(\"%s\") = correct_type(\"%s\");", \
 				graph->name, graph->node->internal_name, \
 				graph->node->attributeNames[index], \
 				octaveString(&aux1, graph->node->attributeValues[index]))
