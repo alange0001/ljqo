@@ -30,6 +30,7 @@
 
 #include "debuggraph.h"
 #include "debuggraph_rel.h"
+#include <access/htup_details.h>
 #include <lib/stringinfo.h>
 #include <parser/parsetree.h>
 #include <optimizer/pathnode.h>
@@ -79,6 +80,11 @@ static DebugNode* get_params(DebugGraph *graph)
 			cpu_index_tuple_cost);
 	addDebugNodeAttributeArgs(node, "cpu_operator_cost", "%lf",
 			cpu_operator_cost);
+	addDebugNodeAttributeArgs(node, "BLCKSZ", "%d", BLCKSZ);
+	addDebugNodeAttributeArgs(node, "sizeof(HeapTupleHeaderData)", "%u",
+			sizeof(HeapTupleHeaderData));
+	addDebugNodeAttributeArgs(node, "MAXIMUM_ALIGNOF", "%u",
+			MAXIMUM_ALIGNOF);
 
 	addDebugNodeAttributeArgs(node, "effective_cache_size", "%d", effective_cache_size);
 
@@ -114,6 +120,7 @@ static void add_relids(DebugNode *node, const char *name,
 		PlannerInfo *root, Relids relids);
 static DebugNode* get_restrictclauses(DebugGraph *graph, PlannerInfo *root,
 		List *clauses);
+static const char* get_tag_name(NodeTag tag);
 
 static DebugNode* get_plannerinfo(DebugGraph *graph, PlannerInfo *root)
 {
@@ -131,6 +138,8 @@ static DebugNode* get_plannerinfo(DebugGraph *graph, PlannerInfo *root)
 		return node;
 
 	addDebugNodeAttributeArgs(node, "type", "%d", root->type);
+	addDebugNodeAttributeArgs(node, "type_name", "%s",
+			get_tag_name(root->type));
 
 	addDebugNodeAttributeArgs(node, "query_level", "%u", root->query_level);
 
@@ -199,6 +208,8 @@ get_reloptinfo(DebugGraph *graph, PlannerInfo *root, RelOptInfo *rel)
 		return node;
 
 	addDebugNodeAttributeArgs(node, "type", "%d", rel->type);
+	addDebugNodeAttributeArgs(node, "type_name", "%s",
+			get_tag_name(rel->type));
 
 	add_relids(node, "relids", root, rel->relids);
 	add_relids(node, "lateral_relids", root, rel->lateral_relids);
@@ -224,6 +235,8 @@ get_reloptinfo(DebugGraph *graph, PlannerInfo *root, RelOptInfo *rel)
 
 		Assert(node_list);
 		addDebugNodeAttributeArgs(node_list, "type", "%d", rel->pathlist->type);
+		addDebugNodeAttributeArgs(node_list, "type_name", "%s",
+				get_tag_name(rel->pathlist->type));
 		newDebugEdgeByName(graph, node->internal_name, node_list->internal_name,
 				"pathlist");
 
@@ -356,6 +369,8 @@ get_restrictclauses(DebugGraph *graph, PlannerInfo *root, List *clauses)
 		return node;
 
 	addDebugNodeAttributeArgs(node, "type", "%d", clauses->type);
+	addDebugNodeAttributeArgs(node, "type_name", "%s",
+			get_tag_name(clauses->type));
 
 	foreach(l, clauses)
 	{
@@ -368,6 +383,8 @@ get_restrictclauses(DebugGraph *graph, PlannerInfo *root, List *clauses)
 		node_c = newDebugNodeByPointer(graph, c, "RestrictInfo");
 		Assert(node_c);
 		addDebugNodeAttributeArgs(node_c, "type", "%d", c->type);
+		addDebugNodeAttributeArgs(node_c, "type_name", "%s",
+				get_tag_name(c->type));
 		newDebugEdgeByName(graph, node->internal_name, node_c->internal_name,
 				"");
 
@@ -407,6 +424,7 @@ static DebugNode* get_parampathinfo(DebugGraph *graph, PlannerInfo *root,
 static DebugNode* get_indexoptinfo(DebugGraph *graph, PlannerInfo *root,
 		IndexPath *path, IndexOptInfo *index_info);
 static double get_loop_count(PlannerInfo *root, Relids outer_relids);
+const char* get_jointype_name(JoinType t);
 
 static DebugNode*
 get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
@@ -427,7 +445,11 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 
 	addDebugNodeAttributeArgs(node, "address", "%p", path);
 	addDebugNodeAttributeArgs(node, "type", "%d", path->type);
+	addDebugNodeAttributeArgs(node, "type_name", "%s",
+			get_tag_name(path->type));
 	addDebugNodeAttributeArgs(node, "pathtype", "%d", path->pathtype);
+	addDebugNodeAttributeArgs(node, "pathtype_name", "%s",
+			get_tag_name(path->pathtype));
 
 	newDebugEdgeByNode(graph, node, get_reloptinfo(graph, root, path->parent),
 			"parent");
@@ -559,6 +581,10 @@ get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
 	if (join)
 	{
 		JoinPath   *jp = (JoinPath *) path;
+
+		addDebugNodeAttributeArgs(node, "jointype", "%d", jp->jointype);
+		addDebugNodeAttributeArgs(node, "jointype_name", "%s",
+				get_jointype_name(jp->jointype));
 
 		newDebugEdgeByNode(graph, node,
 				get_restrictclauses(graph, root, jp->joinrestrictinfo),
@@ -768,6 +794,8 @@ get_parampathinfo(DebugGraph *graph, PlannerInfo *root,
 	Assert(node);
 
 	addDebugNodeAttributeArgs(node, "type", "%d", param_info->type);
+	addDebugNodeAttributeArgs(node, "type_name", "%s",
+			get_tag_name(param_info->type));
 	add_relids(node, "ppi_req_outer", root, param_info->ppi_req_outer);
 	addDebugNodeAttributeArgs(node, "ppi_rows", "%lf", param_info->ppi_rows);
 
@@ -794,6 +822,8 @@ get_indexoptinfo(DebugGraph *graph, PlannerInfo *root,
 	Assert(node);
 
 	addDebugNodeAttributeArgs(node, "type", "%d", index_info->type);
+	addDebugNodeAttributeArgs(node, "type_name", "%s",
+			get_tag_name(index_info->type));
 
 	/* NB: this isn't a complete set of fields */
 	//WRITE_OID_FIELD(indexoid);
@@ -872,4 +902,463 @@ get_loop_count(PlannerInfo *root, Relids outer_relids)
 		bms_free(outer_relids);
 	}
 	return result;
+}
+
+#define ENUM_STR(name) name, CppAsString(name)
+
+typedef struct NodeTagNameMapType
+{
+	NodeTag      tag;
+	const char *name;
+} NodeTagNameMapType;
+
+static const char*
+get_tag_name(NodeTag tag)
+{
+	const NodeTagNameMapType tags[] = {
+			{ENUM_STR(T_Invalid)},
+
+			/*
+			 * TAGS FOR EXECUTOR NODES (execnodes.h)
+			 */
+			{ENUM_STR(T_IndexInfo)},
+			{ENUM_STR(T_ExprContext)},
+			{ENUM_STR(T_ProjectionInfo)},
+			{ENUM_STR(T_JunkFilter)},
+			{ENUM_STR(T_ResultRelInfo)},
+			{ENUM_STR(T_EState)},
+			{ENUM_STR(T_TupleTableSlot)},
+
+			/*
+			 * TAGS FOR PLAN NODES (plannodes.h)
+			 */
+			{ENUM_STR(T_Plan)},
+			{ENUM_STR(T_Result)},
+			{ENUM_STR(T_ModifyTable)},
+			{ENUM_STR(T_Append)},
+			{ENUM_STR(T_MergeAppend)},
+			{ENUM_STR(T_RecursiveUnion)},
+			{ENUM_STR(T_BitmapAnd)},
+			{ENUM_STR(T_BitmapOr)},
+			{ENUM_STR(T_Scan)},
+			{ENUM_STR(T_SeqScan)},
+			{ENUM_STR(T_IndexScan)},
+			{ENUM_STR(T_IndexOnlyScan)},
+			{ENUM_STR(T_BitmapIndexScan)},
+			{ENUM_STR(T_BitmapHeapScan)},
+			{ENUM_STR(T_TidScan)},
+			{ENUM_STR(T_SubqueryScan)},
+			{ENUM_STR(T_FunctionScan)},
+			{ENUM_STR(T_ValuesScan)},
+			{ENUM_STR(T_CteScan)},
+			{ENUM_STR(T_WorkTableScan)},
+			{ENUM_STR(T_ForeignScan)},
+			{ENUM_STR(T_Join)},
+			{ENUM_STR(T_NestLoop)},
+			{ENUM_STR(T_MergeJoin)},
+			{ENUM_STR(T_HashJoin)},
+			{ENUM_STR(T_Material)},
+			{ENUM_STR(T_Sort)},
+			{ENUM_STR(T_Group)},
+			{ENUM_STR(T_Agg)},
+			{ENUM_STR(T_WindowAgg)},
+			{ENUM_STR(T_Unique)},
+			{ENUM_STR(T_Hash)},
+			{ENUM_STR(T_SetOp)},
+			{ENUM_STR(T_LockRows)},
+			{ENUM_STR(T_Limit)},
+			/* these aren't subclasses of Plan: */
+			{ENUM_STR(T_NestLoopParam)},
+			{ENUM_STR(T_PlanRowMark)},
+			{ENUM_STR(T_PlanInvalItem)},
+
+			/*
+			 * TAGS FOR PLAN STATE NODES (execnodes.h)
+			 *
+			 * These should correspond one-to-one with Plan node types.
+			 */
+			{ENUM_STR(T_PlanState)},
+			{ENUM_STR(T_ResultState)},
+			{ENUM_STR(T_ModifyTableState)},
+			{ENUM_STR(T_AppendState)},
+			{ENUM_STR(T_MergeAppendState)},
+			{ENUM_STR(T_RecursiveUnionState)},
+			{ENUM_STR(T_BitmapAndState)},
+			{ENUM_STR(T_BitmapOrState)},
+			{ENUM_STR(T_ScanState)},
+			{ENUM_STR(T_SeqScanState)},
+			{ENUM_STR(T_IndexScanState)},
+			{ENUM_STR(T_IndexOnlyScanState)},
+			{ENUM_STR(T_BitmapIndexScanState)},
+			{ENUM_STR(T_BitmapHeapScanState)},
+			{ENUM_STR(T_TidScanState)},
+			{ENUM_STR(T_SubqueryScanState)},
+			{ENUM_STR(T_FunctionScanState)},
+			{ENUM_STR(T_ValuesScanState)},
+			{ENUM_STR(T_CteScanState)},
+			{ENUM_STR(T_WorkTableScanState)},
+			{ENUM_STR(T_ForeignScanState)},
+			{ENUM_STR(T_JoinState)},
+			{ENUM_STR(T_NestLoopState)},
+			{ENUM_STR(T_MergeJoinState)},
+			{ENUM_STR(T_HashJoinState)},
+			{ENUM_STR(T_MaterialState)},
+			{ENUM_STR(T_SortState)},
+			{ENUM_STR(T_GroupState)},
+			{ENUM_STR(T_AggState)},
+			{ENUM_STR(T_WindowAggState)},
+			{ENUM_STR(T_UniqueState)},
+			{ENUM_STR(T_HashState)},
+			{ENUM_STR(T_SetOpState)},
+			{ENUM_STR(T_LockRowsState)},
+			{ENUM_STR(T_LimitState)},
+
+			/*
+			 * TAGS FOR PRIMITIVE NODES (primnodes.h)
+			 */
+			{ENUM_STR(T_Alias)},
+			{ENUM_STR(T_RangeVar)},
+			{ENUM_STR(T_Expr)},
+			{ENUM_STR(T_Var)},
+			{ENUM_STR(T_Const)},
+			{ENUM_STR(T_Param)},
+			{ENUM_STR(T_Aggref)},
+			{ENUM_STR(T_WindowFunc)},
+			{ENUM_STR(T_ArrayRef)},
+			{ENUM_STR(T_FuncExpr)},
+			{ENUM_STR(T_NamedArgExpr)},
+			{ENUM_STR(T_OpExpr)},
+			{ENUM_STR(T_DistinctExpr)},
+			{ENUM_STR(T_NullIfExpr)},
+			{ENUM_STR(T_ScalarArrayOpExpr)},
+			{ENUM_STR(T_BoolExpr)},
+			{ENUM_STR(T_SubLink)},
+			{ENUM_STR(T_SubPlan)},
+			{ENUM_STR(T_AlternativeSubPlan)},
+			{ENUM_STR(T_FieldSelect)},
+			{ENUM_STR(T_FieldStore)},
+			{ENUM_STR(T_RelabelType)},
+			{ENUM_STR(T_CoerceViaIO)},
+			{ENUM_STR(T_ArrayCoerceExpr)},
+			{ENUM_STR(T_ConvertRowtypeExpr)},
+			{ENUM_STR(T_CollateExpr)},
+			{ENUM_STR(T_CaseExpr)},
+			{ENUM_STR(T_CaseWhen)},
+			{ENUM_STR(T_CaseTestExpr)},
+			{ENUM_STR(T_ArrayExpr)},
+			{ENUM_STR(T_RowExpr)},
+			{ENUM_STR(T_RowCompareExpr)},
+			{ENUM_STR(T_CoalesceExpr)},
+			{ENUM_STR(T_MinMaxExpr)},
+			{ENUM_STR(T_XmlExpr)},
+			{ENUM_STR(T_NullTest)},
+			{ENUM_STR(T_BooleanTest)},
+			{ENUM_STR(T_CoerceToDomain)},
+			{ENUM_STR(T_CoerceToDomainValue)},
+			{ENUM_STR(T_SetToDefault)},
+			{ENUM_STR(T_CurrentOfExpr)},
+			{ENUM_STR(T_TargetEntry)},
+			{ENUM_STR(T_RangeTblRef)},
+			{ENUM_STR(T_JoinExpr)},
+			{ENUM_STR(T_FromExpr)},
+			{ENUM_STR(T_IntoClause)},
+
+			/*
+			 * TAGS FOR EXPRESSION STATE NODES (execnodes.h)
+			 *
+			 * These correspond (not always one-for-one) to primitive nodes derived
+			 * from Expr.
+			 */
+			{ENUM_STR(T_ExprState)},
+			{ENUM_STR(T_GenericExprState)},
+			{ENUM_STR(T_WholeRowVarExprState)},
+			{ENUM_STR(T_AggrefExprState)},
+			{ENUM_STR(T_WindowFuncExprState)},
+			{ENUM_STR(T_ArrayRefExprState)},
+			{ENUM_STR(T_FuncExprState)},
+			{ENUM_STR(T_ScalarArrayOpExprState)},
+			{ENUM_STR(T_BoolExprState)},
+			{ENUM_STR(T_SubPlanState)},
+			{ENUM_STR(T_AlternativeSubPlanState)},
+			{ENUM_STR(T_FieldSelectState)},
+			{ENUM_STR(T_FieldStoreState)},
+			{ENUM_STR(T_CoerceViaIOState)},
+			{ENUM_STR(T_ArrayCoerceExprState)},
+			{ENUM_STR(T_ConvertRowtypeExprState)},
+			{ENUM_STR(T_CaseExprState)},
+			{ENUM_STR(T_CaseWhenState)},
+			{ENUM_STR(T_ArrayExprState)},
+			{ENUM_STR(T_RowExprState)},
+			{ENUM_STR(T_RowCompareExprState)},
+			{ENUM_STR(T_CoalesceExprState)},
+			{ENUM_STR(T_MinMaxExprState)},
+			{ENUM_STR(T_XmlExprState)},
+			{ENUM_STR(T_NullTestState)},
+			{ENUM_STR(T_CoerceToDomainState)},
+			{ENUM_STR(T_DomainConstraintState)},
+
+			/*
+			 * TAGS FOR PLANNER NODES (relation.h)
+			 */
+			{ENUM_STR(T_PlannerInfo)},
+			{ENUM_STR(T_PlannerGlobal)},
+			{ENUM_STR(T_RelOptInfo)},
+			{ENUM_STR(T_IndexOptInfo)},
+			{ENUM_STR(T_ParamPathInfo)},
+			{ENUM_STR(T_Path)},
+			{ENUM_STR(T_IndexPath)},
+			{ENUM_STR(T_BitmapHeapPath)},
+			{ENUM_STR(T_BitmapAndPath)},
+			{ENUM_STR(T_BitmapOrPath)},
+			{ENUM_STR(T_NestPath)},
+			{ENUM_STR(T_MergePath)},
+			{ENUM_STR(T_HashPath)},
+			{ENUM_STR(T_TidPath)},
+			{ENUM_STR(T_ForeignPath)},
+			{ENUM_STR(T_AppendPath)},
+			{ENUM_STR(T_MergeAppendPath)},
+			{ENUM_STR(T_ResultPath)},
+			{ENUM_STR(T_MaterialPath)},
+			{ENUM_STR(T_UniquePath)},
+			{ENUM_STR(T_EquivalenceClass)},
+			{ENUM_STR(T_EquivalenceMember)},
+			{ENUM_STR(T_PathKey)},
+			{ENUM_STR(T_RestrictInfo)},
+			{ENUM_STR(T_PlaceHolderVar)},
+			{ENUM_STR(T_SpecialJoinInfo)},
+			{ENUM_STR(T_LateralJoinInfo)},
+			{ENUM_STR(T_AppendRelInfo)},
+			{ENUM_STR(T_PlaceHolderInfo)},
+			{ENUM_STR(T_MinMaxAggInfo)},
+			{ENUM_STR(T_PlannerParamItem)},
+
+			/*
+			 * TAGS FOR MEMORY NODES (memnodes.h)
+			 */
+			{ENUM_STR(T_MemoryContext)},
+			{ENUM_STR(T_AllocSetContext)},
+
+			/*
+			 * TAGS FOR VALUE NODES (value.h)
+			 */
+			{ENUM_STR(T_Value)},
+			{ENUM_STR(T_Integer)},
+			{ENUM_STR(T_Float)},
+			{ENUM_STR(T_String)},
+			{ENUM_STR(T_BitString)},
+			{ENUM_STR(T_Null)},
+
+			/*
+			 * TAGS FOR LIST NODES (pg_list.h)
+			 */
+			{ENUM_STR(T_List)},
+			{ENUM_STR(T_IntList)},
+			{ENUM_STR(T_OidList)},
+
+			/*
+			 * TAGS FOR STATEMENT NODES (mostly in parsenodes.h)
+			 */
+			{ENUM_STR(T_Query)},
+			{ENUM_STR(T_PlannedStmt)},
+			{ENUM_STR(T_InsertStmt)},
+			{ENUM_STR(T_DeleteStmt)},
+			{ENUM_STR(T_UpdateStmt)},
+			{ENUM_STR(T_SelectStmt)},
+			{ENUM_STR(T_AlterTableStmt)},
+			{ENUM_STR(T_AlterTableCmd)},
+			{ENUM_STR(T_AlterDomainStmt)},
+			{ENUM_STR(T_SetOperationStmt)},
+			{ENUM_STR(T_GrantStmt)},
+			{ENUM_STR(T_GrantRoleStmt)},
+			{ENUM_STR(T_AlterDefaultPrivilegesStmt)},
+			{ENUM_STR(T_ClosePortalStmt)},
+			{ENUM_STR(T_ClusterStmt)},
+			{ENUM_STR(T_CopyStmt)},
+			{ENUM_STR(T_CreateStmt)},
+			{ENUM_STR(T_DefineStmt)},
+			{ENUM_STR(T_DropStmt)},
+			{ENUM_STR(T_TruncateStmt)},
+			{ENUM_STR(T_CommentStmt)},
+			{ENUM_STR(T_FetchStmt)},
+			{ENUM_STR(T_IndexStmt)},
+			{ENUM_STR(T_CreateFunctionStmt)},
+			{ENUM_STR(T_AlterFunctionStmt)},
+			{ENUM_STR(T_DoStmt)},
+			{ENUM_STR(T_RenameStmt)},
+			{ENUM_STR(T_RuleStmt)},
+			{ENUM_STR(T_NotifyStmt)},
+			{ENUM_STR(T_ListenStmt)},
+			{ENUM_STR(T_UnlistenStmt)},
+			{ENUM_STR(T_TransactionStmt)},
+			{ENUM_STR(T_ViewStmt)},
+			{ENUM_STR(T_LoadStmt)},
+			{ENUM_STR(T_CreateDomainStmt)},
+			{ENUM_STR(T_CreatedbStmt)},
+			{ENUM_STR(T_DropdbStmt)},
+			{ENUM_STR(T_VacuumStmt)},
+			{ENUM_STR(T_ExplainStmt)},
+			{ENUM_STR(T_CreateTableAsStmt)},
+			{ENUM_STR(T_CreateSeqStmt)},
+			{ENUM_STR(T_AlterSeqStmt)},
+			{ENUM_STR(T_VariableSetStmt)},
+			{ENUM_STR(T_VariableShowStmt)},
+			{ENUM_STR(T_DiscardStmt)},
+			{ENUM_STR(T_CreateTrigStmt)},
+			{ENUM_STR(T_CreatePLangStmt)},
+			{ENUM_STR(T_CreateRoleStmt)},
+			{ENUM_STR(T_AlterRoleStmt)},
+			{ENUM_STR(T_DropRoleStmt)},
+			{ENUM_STR(T_LockStmt)},
+			{ENUM_STR(T_ConstraintsSetStmt)},
+			{ENUM_STR(T_ReindexStmt)},
+			{ENUM_STR(T_CheckPointStmt)},
+			{ENUM_STR(T_CreateSchemaStmt)},
+			{ENUM_STR(T_AlterDatabaseStmt)},
+			{ENUM_STR(T_AlterDatabaseSetStmt)},
+			{ENUM_STR(T_AlterRoleSetStmt)},
+			{ENUM_STR(T_CreateConversionStmt)},
+			{ENUM_STR(T_CreateCastStmt)},
+			{ENUM_STR(T_CreateOpClassStmt)},
+			{ENUM_STR(T_CreateOpFamilyStmt)},
+			{ENUM_STR(T_AlterOpFamilyStmt)},
+			{ENUM_STR(T_PrepareStmt)},
+			{ENUM_STR(T_ExecuteStmt)},
+			{ENUM_STR(T_DeallocateStmt)},
+			{ENUM_STR(T_DeclareCursorStmt)},
+			{ENUM_STR(T_CreateTableSpaceStmt)},
+			{ENUM_STR(T_DropTableSpaceStmt)},
+			{ENUM_STR(T_AlterObjectSchemaStmt)},
+			{ENUM_STR(T_AlterOwnerStmt)},
+			{ENUM_STR(T_DropOwnedStmt)},
+			{ENUM_STR(T_ReassignOwnedStmt)},
+			{ENUM_STR(T_CompositeTypeStmt)},
+			{ENUM_STR(T_CreateEnumStmt)},
+			{ENUM_STR(T_CreateRangeStmt)},
+			{ENUM_STR(T_AlterEnumStmt)},
+			{ENUM_STR(T_AlterTSDictionaryStmt)},
+			{ENUM_STR(T_AlterTSConfigurationStmt)},
+			{ENUM_STR(T_CreateFdwStmt)},
+			{ENUM_STR(T_AlterFdwStmt)},
+			{ENUM_STR(T_CreateForeignServerStmt)},
+			{ENUM_STR(T_AlterForeignServerStmt)},
+			{ENUM_STR(T_CreateUserMappingStmt)},
+			{ENUM_STR(T_AlterUserMappingStmt)},
+			{ENUM_STR(T_DropUserMappingStmt)},
+			{ENUM_STR(T_AlterTableSpaceOptionsStmt)},
+			{ENUM_STR(T_SecLabelStmt)},
+			{ENUM_STR(T_CreateForeignTableStmt)},
+			{ENUM_STR(T_CreateExtensionStmt)},
+			{ENUM_STR(T_AlterExtensionStmt)},
+			{ENUM_STR(T_AlterExtensionContentsStmt)},
+			{ENUM_STR(T_CreateEventTrigStmt)},
+			{ENUM_STR(T_AlterEventTrigStmt)},
+			{ENUM_STR(T_RefreshMatViewStmt)},
+
+			/*
+			 * TAGS FOR PARSE TREE NODES (parsenodes.h)
+			 */
+			{ENUM_STR(T_A_Expr)},
+			{ENUM_STR(T_ColumnRef)},
+			{ENUM_STR(T_ParamRef)},
+			{ENUM_STR(T_A_Const)},
+			{ENUM_STR(T_FuncCall)},
+			{ENUM_STR(T_A_Star)},
+			{ENUM_STR(T_A_Indices)},
+			{ENUM_STR(T_A_Indirection)},
+			{ENUM_STR(T_A_ArrayExpr)},
+			{ENUM_STR(T_ResTarget)},
+			{ENUM_STR(T_TypeCast)},
+			{ENUM_STR(T_CollateClause)},
+			{ENUM_STR(T_SortBy)},
+			{ENUM_STR(T_WindowDef)},
+			{ENUM_STR(T_RangeSubselect)},
+			{ENUM_STR(T_RangeFunction)},
+			{ENUM_STR(T_TypeName)},
+			{ENUM_STR(T_ColumnDef)},
+			{ENUM_STR(T_IndexElem)},
+			{ENUM_STR(T_Constraint)},
+			{ENUM_STR(T_DefElem)},
+			{ENUM_STR(T_RangeTblEntry)},
+			{ENUM_STR(T_SortGroupClause)},
+			{ENUM_STR(T_WindowClause)},
+			{ENUM_STR(T_PrivGrantee)},
+			{ENUM_STR(T_FuncWithArgs)},
+			{ENUM_STR(T_AccessPriv)},
+			{ENUM_STR(T_CreateOpClassItem)},
+			{ENUM_STR(T_TableLikeClause)},
+			{ENUM_STR(T_FunctionParameter)},
+			{ENUM_STR(T_LockingClause)},
+			{ENUM_STR(T_RowMarkClause)},
+			{ENUM_STR(T_XmlSerialize)},
+			{ENUM_STR(T_WithClause)},
+			{ENUM_STR(T_CommonTableExpr)},
+
+			/*
+			 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)
+			 */
+			{ENUM_STR(T_IdentifySystemCmd)},
+			{ENUM_STR(T_BaseBackupCmd)},
+			{ENUM_STR(T_StartReplicationCmd)},
+			{ENUM_STR(T_TimeLineHistoryCmd)},
+
+			/*
+			 * TAGS FOR RANDOM OTHER STUFF
+			 *
+			 * These are objects that aren't part of parse/plan/execute node tree
+			 * structures)}, but we give them NodeTags anyway for identification
+			 * purposes (usually because they are involved in APIs where we want to
+			 * pass multiple object types through the same pointer).
+			 */
+			{ENUM_STR(T_TriggerData)},		/* in commands/trigger.h */
+			{ENUM_STR(T_EventTriggerData)},			/* in commands/even{TAG_STR(T_trigger.h */
+			{ENUM_STR(T_ReturnSetInfo)},			/* in nodes/execnodes.h */
+			{ENUM_STR(T_WindowObjectData)},			/* private in nodeWindowAgg.c */
+			{ENUM_STR(T_TIDBitmap)},				/* in nodes/tidbitmap.h */
+			{ENUM_STR(T_InlineCodeBlock)},			/* in nodes/parsenodes.h */
+			{ENUM_STR(T_FdwRoutine)},				/* in foreign/fdwapi.h */
+			{0,""}
+		};
+	const NodeTagNameMapType *i;
+	for (i = tags; i->tag != tag && i->name[0] != '\0'; i++);
+	return i->name;
+}
+
+typedef struct JoinTypeNameMap
+{
+	JoinType type;
+	const char *name;
+} JoinTypeNameMap;
+
+const char*
+get_jointype_name(JoinType t)
+{
+	const JoinTypeNameMap types[] = {
+			{ENUM_STR(JOIN_INNER)},					/* matching tuple pairs only */
+			{ENUM_STR(JOIN_LEFT)},					/* pairs + unmatched LHS tuples */
+			{ENUM_STR(JOIN_FULL)},					/* pairs + unmatched LHS + unmatched RHS */
+			{ENUM_STR(JOIN_RIGHT)},					/* pairs + unmatched RHS tuples */
+
+		/*
+		 * Semijoins and anti-semijoins (as defined in relational theory) do not
+		 * appear in the SQL JOIN syntax, but there are standard idioms for
+		 * representing them (e.g., using EXISTS).	The planner recognizes these
+		 * cases and converts them to joins.  So the planner and executor must
+		 * support these codes.  NOTE: in JOIN_SEMI output, it is unspecified
+		 * which matching RHS row is joined to.  In JOIN_ANTI output, the row is
+		 * guaranteed to be null-extended.
+		 */
+			{ENUM_STR(JOIN_SEMI)},					/* 1 copy of each LHS row that has match(es) */
+			{ENUM_STR(JOIN_ANTI)},					/* 1 copy of each LHS row that has no match */
+
+		/*
+		 * These codes are used internally in the planner, but are not supported
+		 * by the executor (nor, indeed, by most of the planner).
+		 */
+			{ENUM_STR(JOIN_UNIQUE_OUTER)},			/* LHS path must be made unique */
+			{ENUM_STR(JOIN_UNIQUE_INNER)},			/* RHS path must be made unique */
+			{0,""}
+	};
+	const JoinTypeNameMap *i;
+	for (i=types; i->type != t && i->name[0] != '\0'; i++);
+	return i->name;
 }
