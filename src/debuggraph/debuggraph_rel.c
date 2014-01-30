@@ -48,9 +48,13 @@ static DebugNode* getNode(DebugGraph *graph, PlannerInfo *root, Node *node);
 void
 printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel, const char *name)
 {
-	DebugGraph *graph = createDebugGraph("RelOptInfo");
+	DebugGraph *graph;
 
+	Assert(root && IsA(root, PlannerInfo));
 	Assert(rel && IsA(rel, RelOptInfo));
+	Assert(name);
+
+	graph = createDebugGraph(name);
 
 	getParams(graph);
 	getNode(graph, root, (Node*)root);
