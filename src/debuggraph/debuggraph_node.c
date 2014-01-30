@@ -390,7 +390,9 @@ _outModifyTable(DebugGraph *graph, const ModifyTable *node)
 	WRITE_INT_FIELD(resultRelIndex);
 	WRITE_NODE_FIELD(plans);
 	WRITE_NODE_FIELD(returningLists);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_NODE_FIELD(fdwPrivLists);
+#	endif
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_INT_FIELD(epqParam);
 
@@ -1074,7 +1076,9 @@ _outIntoClause(DebugGraph *graph, const IntoClause *node)
 	WRITE_NODE_FIELD(options);
 	WRITE_ENUM_FIELD(onCommit, OnCommitAction);
 	WRITE_STRING_FIELD(tableSpaceName);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_NODE_FIELD(viewQuery);
+#	endif
 	WRITE_BOOL_FIELD(skipData);
 
 	return deb_node;
@@ -1201,7 +1205,9 @@ _outFuncExpr(DebugGraph *graph, const FuncExpr *node)
 	WRITE_OID_FIELD(funcid);
 	WRITE_OID_FIELD(funcresulttype);
 	WRITE_BOOL_FIELD(funcretset);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_BOOL_FIELD(funcvariadic);
+#	endif
 	WRITE_ENUM_FIELD(funcformat, CoercionForm);
 	WRITE_OID_FIELD(funccollid);
 	WRITE_OID_FIELD(inputcollid);
@@ -2019,7 +2025,9 @@ _outPlannerInfo(DebugGraph *graph, const PlannerInfo *node)
 	WRITE_NODE_FIELD(right_join_clauses);
 	WRITE_NODE_FIELD(full_join_clauses);
 	WRITE_NODE_FIELD(join_info_list);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_NODE_FIELD(lateral_info_list);
+#	endif
 	WRITE_NODE_FIELD(append_rel_list);
 	WRITE_NODE_FIELD(rowMarks);
 	WRITE_NODE_FIELD(placeholder_list);
@@ -2034,7 +2042,9 @@ _outPlannerInfo(DebugGraph *graph, const PlannerInfo *node)
 	WRITE_FLOAT_FIELD(limit_tuples, "%.0f");
 	WRITE_BOOL_FIELD(hasInheritedTarget);
 	WRITE_BOOL_FIELD(hasJoinRTEs);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_BOOL_FIELD(hasLateralRTEs);
+#	endif
 	WRITE_BOOL_FIELD(hasHavingQual);
 	WRITE_BOOL_FIELD(hasPseudoConstantQuals);
 	WRITE_BOOL_FIELD(hasRecursion);
@@ -2055,7 +2065,9 @@ _outRelOptInfo(DebugGraph *graph, const RelOptInfo *node)
 	WRITE_BITMAPSET_FIELD(relids);
 	WRITE_FLOAT_FIELD(rows, "%.0f");
 	WRITE_INT_FIELD(width);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_BOOL_FIELD(consider_startup);
+#	endif
 	WRITE_NODE_FIELD(reltargetlist);
 	WRITE_NODE_FIELD(pathlist);
 	WRITE_NODE_FIELD(ppilist);
@@ -2068,16 +2080,20 @@ _outRelOptInfo(DebugGraph *graph, const RelOptInfo *node)
 	WRITE_ENUM_FIELD(rtekind, RTEKind);
 	WRITE_INT_FIELD(min_attr);
 	WRITE_INT_FIELD(max_attr);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_NODE_FIELD(lateral_vars);
 	WRITE_BITMAPSET_FIELD(lateral_relids);
 	WRITE_BITMAPSET_FIELD(lateral_referencers);
+#	endif
 	WRITE_NODE_FIELD(indexlist);
 	WRITE_UINT_FIELD(pages);
 	WRITE_FLOAT_FIELD(tuples, "%.0f");
 	WRITE_FLOAT_FIELD(allvisfrac, "%.6f");
 	WRITE_NODE_FIELD(subplan);
 	WRITE_NODE_FIELD(subroot);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_NODE_FIELD(subplan_params);
+#	endif
 	/* we don't try to print fdwroutine or fdw_private */
 	WRITE_NODE_FIELD(baserestrictinfo);
 	WRITE_NODE_FIELD(joininfo);
@@ -2096,7 +2112,9 @@ _outIndexOptInfo(DebugGraph *graph, const IndexOptInfo *node)
 	/* Do NOT print rel field, else infinite recursion */
 	WRITE_UINT_FIELD(pages);
 	WRITE_FLOAT_FIELD(tuples, "%.0f");
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_INT_FIELD(tree_height);
+#	endif
 	WRITE_INT_FIELD(ncolumns);
 	/* array fields aren't really worth the trouble to print */
 	WRITE_OID_FIELD(relam);
@@ -2241,6 +2259,7 @@ _outSpecialJoinInfo(DebugGraph *graph, const SpecialJoinInfo *node)
 	return deb_node;
 }
 
+#if PG_VERSION_NUM/100 >= 903
 static DebugNode*
 _outLateralJoinInfo(DebugGraph *graph, const LateralJoinInfo *node)
 {
@@ -2251,6 +2270,7 @@ _outLateralJoinInfo(DebugGraph *graph, const LateralJoinInfo *node)
 
 	return deb_node;
 }
+#endif
 
 static DebugNode*
 _outAppendRelInfo(DebugGraph *graph, const AppendRelInfo *node)
@@ -2275,7 +2295,9 @@ _outPlaceHolderInfo(DebugGraph *graph, const PlaceHolderInfo *node)
 	WRITE_UINT_FIELD(phid);
 	WRITE_NODE_FIELD(ph_var);
 	WRITE_BITMAPSET_FIELD(ph_eval_at);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_BITMAPSET_FIELD(ph_lateral);
+#	endif
 	WRITE_BITMAPSET_FIELD(ph_needed);
 	WRITE_INT_FIELD(ph_width);
 
@@ -2478,7 +2500,9 @@ _outLockingClause(DebugGraph *graph, const LockingClause *node)
 	WRITE_NODE_TYPE("LOCKINGCLAUSE");
 
 	WRITE_NODE_FIELD(lockedRels);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_ENUM_FIELD(strength, LockClauseStrength);
+#	endif
 	WRITE_BOOL_FIELD(noWait);
 
 	return deb_node;
@@ -2676,7 +2700,9 @@ _outRowMarkClause(DebugGraph *graph, const RowMarkClause *node)
 	WRITE_NODE_TYPE("ROWMARKCLAUSE");
 
 	WRITE_UINT_FIELD(rti);
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_ENUM_FIELD(strength, LockClauseStrength);
+#	endif
 	WRITE_BOOL_FIELD(noWait);
 	WRITE_BOOL_FIELD(pushedDown);
 
@@ -2778,7 +2804,9 @@ _outRangeTblEntry(DebugGraph *graph, const RangeTblEntry *node)
 			break;
 	}
 
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_BOOL_FIELD(lateral);
+#	endif
 	WRITE_BOOL_FIELD(inh);
 	WRITE_BOOL_FIELD(inFromCl);
 	WRITE_UINT_FIELD(requiredPerms);
@@ -3007,7 +3035,9 @@ _outRangeSubselect(DebugGraph *graph, const RangeSubselect *node)
 {
 	WRITE_NODE_TYPE("RANGESUBSELECT");
 
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_BOOL_FIELD(lateral);
+#	endif
 	WRITE_NODE_FIELD(subquery);
 	WRITE_NODE_FIELD(alias);
 
@@ -3019,7 +3049,9 @@ _outRangeFunction(DebugGraph *graph, const RangeFunction *node)
 {
 	WRITE_NODE_TYPE("RANGEFUNCTION");
 
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_BOOL_FIELD(lateral);
+#	endif
 	WRITE_NODE_FIELD(funccallnode);
 	WRITE_NODE_FIELD(alias);
 	WRITE_NODE_FIELD(coldeflist);
@@ -3483,9 +3515,11 @@ static void _outNode(DebugGraph *graph, const void *obj,
 			case T_SpecialJoinInfo:
 				deb_node = _outSpecialJoinInfo(graph, obj);
 				break;
+#			if PG_VERSION_NUM/100 >= 903
 			case T_LateralJoinInfo:
 				deb_node = _outLateralJoinInfo(graph, obj);
 				break;
+#			endif
 			case T_AppendRelInfo:
 				deb_node = _outAppendRelInfo(graph, obj);
 				break;

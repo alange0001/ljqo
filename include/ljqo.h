@@ -33,7 +33,6 @@
 #include <postgres.h>
 
 #if PG_VERSION_NUM/100 == 902 /* support for 9.2 */
-#	define POSTGRES_9 1
 #elif PG_VERSION_NUM/100 == 903 /* support for 9.3 */
 #else /* exception */
 #	error "The specified PostgreSQL is not supported!"

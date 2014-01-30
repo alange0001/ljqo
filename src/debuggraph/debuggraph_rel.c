@@ -30,7 +30,9 @@
 
 #include "debuggraph.h"
 #include "debuggraph_rel.h"
+#if PG_VERSION_NUM/100 >= 903
 #include <access/htup_details.h>
+#endif
 #include <lib/stringinfo.h>
 #include <parser/parsetree.h>
 #include <optimizer/pathnode.h>
@@ -182,10 +184,12 @@ set_T_RelOptInfo(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
 	RelOptInfo *actual_node = (RelOptInfo*) node;
 
 	addRelids(n, "relids", root, actual_node->relids);
-	addRelids(n, "lateral_relids", root, actual_node->lateral_relids);
 	WRITE_FLOAT_FIELD(rows, "%lf");
 	WRITE_INT_FIELD(width);
+#	if PG_VERSION_NUM/100 >= 903
+	addRelids(n, "lateral_relids", root, actual_node->lateral_relids);
 	WRITE_BOOL_FIELD(consider_startup);
+#	endif
 
 	WRITE_UINT_FIELD(relid);
 	newDebugEdgeByNode(graph, n,
@@ -401,7 +405,9 @@ set_T_IndexOptInfo(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
 
 	WRITE_UINT_FIELD(pages);
 	WRITE_FLOAT_FIELD(tuples, "%lf");
+#	if PG_VERSION_NUM/100 >= 903
 	WRITE_INT_FIELD(tree_height);
+#	endif
 	WRITE_INT_FIELD(ncolumns);
 	WRITE_OID_FIELD(relam);
 	WRITE_UINT_FIELD(amcostestimate);
@@ -655,7 +661,9 @@ const NodeTagMapType nodetag_maps[] = {
 		{ENUM_MAP_F(T_RestrictInfo)},
 		{ENUM_MAP_N(T_PlaceHolderVar)},
 		{ENUM_MAP_N(T_SpecialJoinInfo)},
+#		if PG_VERSION_NUM/100 >= 903
 		{ENUM_MAP_N(T_LateralJoinInfo)},
+#		endif
 		{ENUM_MAP_N(T_AppendRelInfo)},
 		{ENUM_MAP_N(T_PlaceHolderInfo)},
 		{ENUM_MAP_N(T_MinMaxAggInfo)},
@@ -779,9 +787,11 @@ const NodeTagMapType nodetag_maps[] = {
 		{ENUM_MAP_N(T_CreateExtensionStmt)},
 		{ENUM_MAP_N(T_AlterExtensionStmt)},
 		{ENUM_MAP_N(T_AlterExtensionContentsStmt)},
+#		if PG_VERSION_NUM/100 >= 903
 		{ENUM_MAP_N(T_CreateEventTrigStmt)},
 		{ENUM_MAP_N(T_AlterEventTrigStmt)},
 		{ENUM_MAP_N(T_RefreshMatViewStmt)},
+#		endif
 
 		/*
 		 * TAGS FOR PARSE TREE NODES (parsenodes.h)
@@ -828,7 +838,9 @@ const NodeTagMapType nodetag_maps[] = {
 		{ENUM_MAP_N(T_IdentifySystemCmd)},
 		{ENUM_MAP_N(T_BaseBackupCmd)},
 		{ENUM_MAP_N(T_StartReplicationCmd)},
+#		if PG_VERSION_NUM/100 >= 903
 		{ENUM_MAP_N(T_TimeLineHistoryCmd)},
+#		endif
 
 		/*
 		 * TAGS FOR RANDOM OTHER STUFF
@@ -839,7 +851,9 @@ const NodeTagMapType nodetag_maps[] = {
 		 * pass multiple object types through the same pointer).
 		 */
 		{ENUM_MAP_N(T_TriggerData)},		/* in commands/trigger.h */
+#		if PG_VERSION_NUM/100 >= 903
 		{ENUM_MAP_N(T_EventTriggerData)},			/* in commands/even{TAG_STR(T_trigger.h */
+#		endif
 		{ENUM_MAP_N(T_ReturnSetInfo)},			/* in nodes/execnodes.h */
 		{ENUM_MAP_N(T_WindowObjectData)},			/* private in nodeWindowAgg.c */
 		{ENUM_MAP_N(T_TIDBitmap)},				/* in nodes/tidbitmap.h */
