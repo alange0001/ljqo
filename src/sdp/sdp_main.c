@@ -36,9 +36,8 @@ int sdp_min_iterations    = DEFAULT_SDP_MIN_ITERATIONS;
 int sdp_max_iterations    = DEFAULT_SDP_MAX_ITERATIONS;
 
 /*------------------------------- DEBUG ----------------------------------*/
-/*#define SDP_DEBUG*/
-/*#define SDP_DEBUG2*/
-#define SDP_DEBUG3
+#define SDP_DEBUG
+#define SDP_DEBUG2
 #ifdef SDP_DEBUG
 #	include "nodes/print.h"
 #	define SDP_DEBUG_MSG(format, ...) \
@@ -49,20 +48,21 @@ int sdp_max_iterations    = DEFAULT_SDP_MAX_ITERATIONS;
 #ifdef SDP_DEBUG2
 #	define SDP_DEBUG_MSG2(format, ...) \
 		elog(DEBUG1, "SDP: " format, ##__VA_ARGS__)
+	/*SDP_DEBUG_MSG2_IN: Initialization and Destruction */
+#	define SDP_DEBUG_MSG2_IN(...)
+	/*SDP_DEBUG_MSG2_MC: Memory Context */
+#	define SDP_DEBUG_MSG2_MC(...)
+	/*SDP_DEBUG_MSG2_SS: S-Phase sampling */
+#	define SDP_DEBUG_MSG2_SS(...)
+	/*SDP_DEBUG_MSG2_SR: S-Phase reconstruction */
+#	define SDP_DEBUG_MSG2_SR(...)
+	/*SDP_DEBUG_MSG2_DM: DP-Phase matrix */
+#	define SDP_DEBUG_MSG2_DM(...)
 #else
 #	define SDP_DEBUG_MSG2(...)
+#	define SDP_DEBUG_MSG2_IN(...)
+#	define SDP_DEBUG_MSG2_MC(...)
 #endif /* SDP_DEBUG2 */
-#ifdef SDP_DEBUG3
-#	define SDP_DEBUG_MSG3(format, ...) \
-		elog(DEBUG1, "SDP: " format, ##__VA_ARGS__)
-static void debug_print_reloptinfo(const char *name,
-                                        PlannerInfo *root, RelOptInfo *rel);
-#	define SDP_DEBUG_PRINT_RELOPTINFO(name, root, rel) \
-	debug_print_reloptinfo(name, root, rel)
-#else
-#	define SDP_DEBUG_MSG3(...)
-#	define SDP_DEBUG_PRINT_RELOPTINFO(...)
-#endif /* SDP_DEBUG3 */
 
 /*------------------------ MAIN INTERNAL TYPES ---------------------------*/
 /**
@@ -176,7 +176,7 @@ static void
 initiate_private_data(private_data_type* private_data, PlannerInfo *root,
 		int number_of_rels, List *initial_rels)
 {
-	SDP_DEBUG_MSG2("> initiate_private_data(root=%p, number_of_rels=%d, "
+	SDP_DEBUG_MSG2_IN("> initiate_private_data(root=%p, number_of_rels=%d, "
 			"initial_rels=%p)", root, number_of_rels, initial_rels);
 	Assert(IsA(root, PlannerInfo));
 	Assert(number_of_rels > 0);
@@ -203,7 +203,7 @@ initiate_private_data(private_data_type* private_data, PlannerInfo *root,
 	/* this function call depends on node_list and number_of_rels*/
 	create_edge_list(private_data);
 
-	SDP_DEBUG_MSG2("< initiate_private_data()");
+	SDP_DEBUG_MSG2_IN("< initiate_private_data()");
 	/* at this point the private_data is complete */
 }
 
@@ -212,12 +212,12 @@ static void destroy_edge_list(edge_list_type* edge_list);
 static void
 finalize_private_data(private_data_type* private_data)
 {
-	SDP_DEBUG_MSG2("> destroy_private_data(private_data=%p)", private_data);
+	SDP_DEBUG_MSG2_IN("> destroy_private_data(private_data=%p)", private_data);
 
 	pfree(private_data->node_list);
 	destroy_edge_list(&private_data->edge_list);
 
-	SDP_DEBUG_MSG2("< destroy_private_data()");
+	SDP_DEBUG_MSG2_IN("< destroy_private_data()");
 }
 
 static inline void create_edge(edge_type* out,
@@ -226,8 +226,13 @@ static inline void create_edge(edge_type* out,
 static temp_context_type* temporary_context_create(PlannerInfo* root);
 static temp_context_type* temporary_context_enter(
 		temp_context_type* saved_data, PlannerInfo* root);
+static void temporary_context_clear_root(temp_context_type* saved_data,
+		PlannerInfo *root);
+static void temporary_context_restore_root(temp_context_type* saved_data,
+		PlannerInfo *root);
 static void temporary_context_leave(temp_context_type* saved_data);
-static void temporary_context_destroy(temp_context_type* saved_data);
+static void temporary_context_destroy(temp_context_type* saved_data,
+		bool restore_root);
 
 /**
  * is_it_a_possible_join:
@@ -261,7 +266,7 @@ create_edge_list(private_data_type* private_data)
 	unsigned int       list_size = 0;
 	edge_type*    edge_list;
 
-	SDP_DEBUG_MSG2("> create_edge_list(private_data=%p)", private_data);
+	SDP_DEBUG_MSG2_IN("> create_edge_list(private_data=%p)", private_data);
 
 	/* we assume number_of_rels^2 as the maximum size for the query graph */
 	max_size = (  (unsigned long int)private_data->number_of_rels
@@ -293,7 +298,7 @@ create_edge_list(private_data_type* private_data)
 				{
 					used[i] = used[j] = true;
 
-					SDP_DEBUG_MSG2("  create_edge_list() edge_list[%u] = "
+					SDP_DEBUG_MSG2_IN("  create_edge_list() edge_list[%u] = "
 							"(%u,%u)", list_size, rel1->relid, rel2->relid);
 
 					create_edge(&edge_list[list_size++], rel1, rel2);
@@ -319,7 +324,7 @@ create_edge_list(private_data_type* private_data)
 
 						if( is_it_a_possible_join(save_context, rel1, rel2) )
 						{
-							SDP_DEBUG_MSG2("  create_edge_list() "
+							SDP_DEBUG_MSG2_IN("  create_edge_list() "
 									"edge_list[%u] = (%u,%u)",
 									list_size, rel1->relid, rel2->relid);
 
@@ -334,16 +339,16 @@ create_edge_list(private_data_type* private_data)
 			}
 		}
 
-		temporary_context_destroy(save_context);
+		temporary_context_destroy(save_context, true);
 		pfree(used);
 	}
 
 	private_data->edge_list.size = list_size;
 	private_data->edge_list.list = edge_list;
 
-	SDP_DEBUG_MSG2("  create_edge_list() edge_list_size=%u",
+	SDP_DEBUG_MSG2_IN("  create_edge_list() edge_list_size=%u",
 			private_data->edge_list.size);
-	SDP_DEBUG_MSG2("< create_edge_list()");
+	SDP_DEBUG_MSG2_IN("< create_edge_list()");
 }
 
 /**
@@ -373,7 +378,7 @@ destroy_edge_list(edge_list_type* edge_list)
 	int i;
 	int n = edge_list->size;
 
-	SDP_DEBUG_MSG2("> destroy_edge_list(edge_list=%p)", edge_list);
+	SDP_DEBUG_MSG2_IN("> destroy_edge_list(edge_list=%p)", edge_list);
 	Assert(edge_list->size > 0);
 
 	for( i=0; i<n; i++ )
@@ -382,7 +387,7 @@ destroy_edge_list(edge_list_type* edge_list)
 	}
 	pfree(edge_list->list);
 
-	SDP_DEBUG_MSG2("< destroy_edge_list()");
+	SDP_DEBUG_MSG2_IN("< destroy_edge_list()");
 }
 
 /*============================= S-PHASE =================================*/
@@ -401,6 +406,13 @@ typedef struct sample_return_type
 
 static List* s_phase_get_a_sample(edge_list_type* edge_list,
 		RelOptInfo** cur_rels, PlannerInfo* root, int nrels);
+static RelOptInfo* s_phase_reconstruct_cheapest_path(PlannerInfo *root,
+		RelOptInfo *min_rel);
+#ifdef USE_ASSERT_CHECKING
+static void AssertContextRel(RelOptInfo *rel);
+#else
+#define AssertRelContext(...)
+#endif
 
 /**
  * s_phase:
@@ -455,13 +467,11 @@ s_phase(private_data_type* private_data)
 			sample_return_type*  returned_item;
 			RelOptInfo*          cur_rel;
 
-			SDP_DEBUG_MSG2("  s_phase(): loop=%d", loop);
+			SDP_DEBUG_MSG2_SS("  s_phase(): loop=%d", loop);
 
 			/* root->join_rel_list must be cleaned before a new sample. */
-			root->join_rel_list = list_truncate(
-					root->join_rel_list, save_context->savelength);
 			/* It's also expected that root->join_rel_hash = NULL. */
-			root->join_rel_hash = NULL;
+			temporary_context_clear_root(save_context, root);
 
 			/* get a new sample:
 			 *   returned_list and cur_rels are outputs from the function call */
@@ -488,8 +498,9 @@ s_phase(private_data_type* private_data)
 				cur_rels = min_rels;
 				min_rels = aux;
 
-				SDP_DEBUG_MSG2("  s_phase(): min_cost=%lf --> %lf",
-						min_cost, cur_rel->cheapest_total_path->total_cost);
+				SDP_DEBUG_MSG2("  s_phase(): loop=%d, min_cost=%lf --> %lf",
+						loop, min_cost,
+						cur_rel->cheapest_total_path->total_cost);
 
 				min_r = cur_rel;
 				min_cost = cur_rel->cheapest_total_path->total_cost;
@@ -502,11 +513,15 @@ s_phase(private_data_type* private_data)
 
 		SDP_DEBUG_MSG("  s_phase(): min_cost=%lf", min_cost);
 		opte_printf("Phase1 Cost = %.2lf", min_cost);
-		SDP_DEBUG_PRINT_RELOPTINFO("  s_phase():", root, min_r);
 
 		/* restore old memory context */
 		temporary_context_leave(save_context);
-		temporary_context_destroy(save_context);
+		temporary_context_restore_root(save_context, root);
+
+		//min_r = s_phase_reconstruct_cheapest_path(root, min_r);
+		//AssertContextRel(min_r);
+
+		temporary_context_destroy(save_context, false);
 
 #		ifdef USE_ASSERT_CHECKING
 		{
@@ -556,7 +571,7 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 	int rel_count;
 	int edge_list_size = edge_list->size;
 
-	SDP_DEBUG_MSG2("> s_phase_get_a_sample(edge_list(%d), nrels=%d)",
+	SDP_DEBUG_MSG2_SS("> s_phase_get_a_sample(edge_list(%d), nrels=%d)",
 					edge_list->size, nrels);
 #	ifdef SDP_DEBUG2
 	fprintf(stderr, "DEBUG:  SDP:   s_phase_get_a_sample(): edge_list: ");
@@ -572,7 +587,7 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 		int j = i;
 		int r;
 
-		SDP_DEBUG_MSG2("  s_phase_get_a_sample(): i=%d, rel_count=%d",
+		SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): i=%d, rel_count=%d",
 				i, rel_count);
 
 		/* This while is only an increment for both i and j. */
@@ -611,14 +626,14 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 			bms_free(intersection);
 			break;
 		}
-		SDP_DEBUG_MSG2("  s_phase_get_a_sample(): i=%d, rel_count=%d, j=%d",
+		SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): i=%d, rel_count=%d, j=%d",
 				i, rel_count, j);
 
 		if( j < edge_list_size && i != j )
 			/* swap [i] <--> [j] */
 			swap_edge(&edge_list->list[i], &edge_list->list[j]);
 
-		SDP_DEBUG_MSG2("  s_phase_get_a_sample(): cur_rel=%p, "
+		SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): cur_rel=%p, "
 				"edge_list->list[i] = (%u,%u)", cur_rel,
 				edge_list->list[i].node1->relid,
 				edge_list->list[i].node2->relid);
@@ -627,13 +642,13 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 		 * cur_rels vector. */
 		if( cur_rel == NULL )
 		{
-			SDP_DEBUG_MSG2("  s_phase_get_a_sample(): edge_list->list[i]: "
+			SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): edge_list->list[i]: "
 					"cur_rel == NULL");
 			cur_rel = make_join_rel(root, edge_list->list[i].node1,
 			                              edge_list->list[i].node2);
 			if( cur_rel )
 			{
-				SDP_DEBUG_MSG2("  s_phase_get_a_sample(): edge_list->list[i]: "
+				SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): edge_list->list[i]: "
 						"joined (%u,%u)", edge_list->list[i].node1->relid,
 						edge_list->list[i].node2->relid);
 				cur_rels[rel_count++] = edge_list->list[i].node1;
@@ -647,7 +662,7 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 		{
 			RelOptInfo* join = NULL;
 
-			SDP_DEBUG_MSG2("  s_phase_get_a_sample(): edge_list->list[i]: "
+			SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): edge_list->list[i]: "
 					"j < edge_list->size");
 			Assert(cur_rel && IsA(cur_rel, RelOptInfo));
 			Assert(bms_overlap(cur_rel->relids,
@@ -660,13 +675,13 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 			if( bms_overlap(cur_rel->relids,
 			                edge_list->list[i].node1->relids) )
 			{
-				SDP_DEBUG_MSG2("  s_phase_get_a_sample(): edge_list->list[i]: "
+				SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): edge_list->list[i]: "
 						"joining %u", edge_list->list[i].node2->relid);
 				join = make_join_rel(root, cur_rel,
 						edge_list->list[i].node2);
 				if( join )
 				{
-					SDP_DEBUG_MSG2("  s_phase_get_a_sample(): edge_list->list[i]: "
+					SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): edge_list->list[i]: "
 							"joined %u", edge_list->list[i].node2->relid);
 					cur_rel = join;
 					cur_rels[rel_count++] = edge_list->list[i].node2;
@@ -676,13 +691,13 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 			if( bms_overlap(cur_rel->relids,
 			                edge_list->list[i].node2->relids) )
 			{
-				SDP_DEBUG_MSG2("  s_phase_get_a_sample(): edge_list->list[i]: "
+				SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): edge_list->list[i]: "
 						"joining %u", edge_list->list[i].node1->relid);
 				join = make_join_rel(root, cur_rel,
 						edge_list->list[i].node1);
 				if( join )
 				{
-					SDP_DEBUG_MSG2("  s_phase_get_a_sample(): edge_list->list[i]: "
+					SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): edge_list->list[i]: "
 							"joined %u", edge_list->list[i].node1->relid);
 					cur_rel = join;
 					cur_rels[rel_count++] = edge_list->list[i].node1;
@@ -693,7 +708,7 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 		}
 		else /* j was exhausted. [i] is not connected to cur_rel */
 		{
-			SDP_DEBUG_MSG2("  s_phase_get_a_sample(): edge_list->list[i]: "
+			SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): edge_list->list[i]: "
 					"j >= edge_list->size");
 			Assert(cur_rel && IsA(cur_rel, RelOptInfo));
 			Assert(!bms_overlap(cur_rel->relids, edge_list->list[i].relids));
@@ -716,7 +731,7 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 	{
 		edge_list_type edge_list2;
 
-		SDP_DEBUG_MSG2("  s_phase_get_a_sample(): calling recursively: "
+		SDP_DEBUG_MSG2_SS("  s_phase_get_a_sample(): calling recursively: "
 				"rel_count=%d, edge_list_size=%d", rel_count, edge_list_size);
 		Assert( edge_list_size > 0 && edge_list_size < edge_list->size );
 
@@ -820,9 +835,32 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 	return_item->rel_count = rel_count;
 	ret_list = lappend(ret_list, return_item);
 
-	SDP_DEBUG_MSG2("< s_phase_get_a_sample() = %p (length=%d, nrels=%d)",
+	SDP_DEBUG_MSG2_SS("< s_phase_get_a_sample() = %p (length=%d, nrels=%d)",
 			ret_list, list_length(ret_list), nrels);
 	return ret_list;
+}
+
+/**
+ * s_phase_reconstruct_min_rel:
+ *    Reconstruct min_rel in the old memory context.
+ */
+static RelOptInfo*
+s_phase_reconstruct_cheapest_path(PlannerInfo *root, RelOptInfo *min_rel)
+{
+	RelOptInfo *ret = NULL;
+	Path *path;
+
+	SDP_DEBUG_MSG2_SR("> s_phase_reconstruct_cheapest_path(root=%p, min_rel=%p)",
+	               root, min_rel);
+
+	Assert(root && IsA(root, PlannerInfo));
+	Assert(min_rel && IsA(min_rel, RelOptInfo));
+	Assert(min_rel->cheapest_total_path);
+
+
+	SDP_DEBUG_MSG2_SR("< s_phase_reconstruct_cheapest_path(root=%p, min_rel=%p)"
+	               " = %p", root, min_rel, ret);
+	return ret;
 }
 
 /*============================= DP-PHASE ================================*/
@@ -860,7 +898,7 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 	{
 		int p;
 
-		SDP_DEBUG_MSG2("  dp_phase(): level=%d", level);
+		SDP_DEBUG_MSG2_DM("  dp_phase(): level=%d", level);
 
 		if( level > 0 )
 			matrix[level] = palloc(sizeof(RelOptInfo*) * nrels -level);
@@ -869,6 +907,8 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 			matrix[level] = sequence;
 			continue;
 		}
+
+		root->join_cur_level = level +1;
 
 		for( p=0; p < nrels -level; p++ )
 		{
@@ -890,18 +930,27 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 
 				if( rel1 && rel2 )
 				{
+					RelOptInfo *join;
 					Assert(IsA(rel1, RelOptInfo));
 					Assert(IsA(rel2, RelOptInfo));
 					Assert(!bms_overlap(rel1->relids, rel2->relids));
 
-					matrix[level][p] = make_join_rel(root, rel1, rel2);
+					join = make_join_rel(root, rel1, rel2);
+					if( join ) {
+						if( ! matrix[level][p] )
+							matrix[level][p] = join;
+						else
+						{
+							Assert(matrix[level][p] == join);
+						}
+					}
 				}
 			}
 
 			if( matrix[level][p] )
 			{
 				set_cheapest(matrix[level][p]);
-				SDP_DEBUG_MSG2("  dp_phase(): matrix[level=%d][p=%d] = %lf",
+				SDP_DEBUG_MSG2_DM("  dp_phase(): matrix[level=%d][p=%d] = %lf",
 						level, p,
 						matrix[level][p]->cheapest_total_path->total_cost);
 			}
@@ -918,7 +967,6 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 	ret = matrix[nrels-1][0];
 	SDP_DEBUG_MSG("  dp_phase(): best plan found! cost=%lf",
 			ret->cheapest_total_path->total_cost);
-	SDP_DEBUG_PRINT_RELOPTINFO("  dp_phase():", root, ret);
 
 	for( level = 0; level < nrels; level++ )
 		pfree(matrix[level]);
@@ -935,7 +983,7 @@ temporary_context_create(PlannerInfo* root)
 {
 	temp_context_type* ret = palloc(sizeof(temp_context_type));
 
-	SDP_DEBUG_MSG2("> temporary_context_create(root=%p)", root);
+	SDP_DEBUG_MSG2_MC("> temporary_context_create(root=%p)", root);
 	Assert(IsA(root, PlannerInfo));
 
 	ret->root = root;
@@ -948,14 +996,14 @@ temporary_context_create(PlannerInfo* root)
 	ret->savehash = root->join_rel_hash;
 	root->join_rel_hash = NULL;
 
-	SDP_DEBUG_MSG2("< temporary_context_create()");
+	SDP_DEBUG_MSG2_MC("< temporary_context_create()");
 	return ret;
 }
 
 static temp_context_type*
 temporary_context_enter(temp_context_type* saved_data, PlannerInfo* root)
 {
-	SDP_DEBUG_MSG2("> temporary_context_enter(saved_data=%p, root=%p)",
+	SDP_DEBUG_MSG2_MC("> temporary_context_enter(saved_data=%p, root=%p)",
 			saved_data, root);
 	Assert( (saved_data && !root) || (!saved_data && root) );
 
@@ -964,179 +1012,123 @@ temporary_context_enter(temp_context_type* saved_data, PlannerInfo* root)
 
 	saved_data->oldcxt = MemoryContextSwitchTo(saved_data->mycontext);
 
-	SDP_DEBUG_MSG2("< temporary_context_enter()");
+	SDP_DEBUG_MSG2_MC("< temporary_context_enter()");
 	return saved_data;
+}
+
+static void
+temporary_context_clear_root(temp_context_type* saved_data,
+		PlannerInfo *root)
+{
+	SDP_DEBUG_MSG2_MC("> temporary_context_clean_root(saved_data=%p, root=%p)",
+			saved_data, root);
+	Assert(saved_data && root);
+	Assert(IsA(saved_data->root, PlannerInfo));
+
+	root->join_rel_list = list_truncate(
+			root->join_rel_list, saved_data->savelength);
+	root->join_rel_hash = NULL;
+
+	SDP_DEBUG_MSG2_MC("< temporary_context_clean_root()");
+}
+
+static void
+temporary_context_restore_root(temp_context_type* saved_data,
+		PlannerInfo *root)
+{
+	SDP_DEBUG_MSG2_MC("> temporary_context_restore_root(saved_data=%p, root=%p)",
+			saved_data, root);
+	Assert(saved_data && root);
+	Assert(IsA(saved_data->root, PlannerInfo));
+
+	saved_data->root->join_rel_list = list_truncate(
+				saved_data->root->join_rel_list, saved_data->savelength);
+	saved_data->root->join_rel_hash = saved_data->savehash;
+
+	SDP_DEBUG_MSG2_MC("< temporary_context_restore_root()");
 }
 
 static void
 temporary_context_leave(temp_context_type* saved_data)
 {
-	SDP_DEBUG_MSG2("> temporary_context_leave(saved_data=%p)", saved_data);
+	SDP_DEBUG_MSG2_MC("> temporary_context_leave(saved_data=%p)", saved_data);
+	Assert(saved_data);
 	Assert(IsA(saved_data->root, PlannerInfo));
 
 	MemoryContextSwitchTo(saved_data->oldcxt);
 
-	SDP_DEBUG_MSG2("< temporary_context_leave()");
+	SDP_DEBUG_MSG2_MC("< temporary_context_leave()");
 }
 
 static void
-temporary_context_destroy(temp_context_type* saved_data)
+temporary_context_destroy(temp_context_type* saved_data,
+		bool restore_root)
 {
-	SDP_DEBUG_MSG2("> temporary_context_destroy(saved_data=%p)", saved_data);
+	SDP_DEBUG_MSG2_MC("> temporary_context_destroy(saved_data=%p,"
+	               " restore_root=%d)", saved_data, restore_root);
+	Assert(saved_data);
 	Assert(IsA(saved_data->root, PlannerInfo));
 
-	saved_data->root->join_rel_list = list_truncate(
-			saved_data->root->join_rel_list, saved_data->savelength);
-	saved_data->root->join_rel_hash = saved_data->savehash;
-	saved_data->root = NULL;
+	if( restore_root )
+		temporary_context_restore_root(saved_data, saved_data->root);
 
 	MemoryContextDelete(saved_data->mycontext);
+	pfree(saved_data);
 
-	SDP_DEBUG_MSG2("< temporary_context_destroy()");
+	SDP_DEBUG_MSG2_MC("< temporary_context_destroy()");
 }
 
-/*============================== UTILITIES =================================*/
-#ifdef SDP_DEBUG3
+/*============================== ASSERTIONS =================================*/
+#ifdef USE_ASSERT_CHECKING
 
-static char*
-debug_get_relids(Relids relids)
+static void AssertContextPath(Path *path);
+
+static void
+AssertContextRel(RelOptInfo *rel)
 {
-	char       *ret = palloc(sizeof(char) * 500);
-	//TODO: alloc ret appropriately
-	Relids		tmprelids;
-	int			x;
-	bool		first = true;
+	Assert(rel && IsA(rel, RelOptInfo) );
+	Assert(MemoryContextContains(CurrentMemoryContext, rel));
 
-	ret[0] = '\0';
-
-	tmprelids = bms_copy(relids);
-	while ((x = bms_first_member(tmprelids)) >= 0)
-	{
-		if (first)
-		{
-			sprintf(&ret[strlen(ret)], "%d", x);
-			first = false;
+	{ /* pathlist: */
+		ListCell *l;
+		foreach(l, rel->pathlist){
+			Path *path = (Path*) lfirst(l);
+			AssertContextPath(path);
 		}
-		else
-			sprintf(&ret[strlen(ret)], " %d", x);
-	}
-	bms_free(tmprelids);
-
-	return ret;
+	} /* pathlist */
 }
 
-static char*
-debug_get_path(PlannerInfo *root, Path *path)
+static void
+AssertContextPath(Path *path)
 {
-	char       *ret = palloc(sizeof(char) * 2 * 1024 * 1024);
-	//TODO: alloc ret appropriately
-	const char *ptype;
-	bool		join = false;
-	Path	   *subpath = NULL;
-	int			i;
+	Assert(path);
+	Assert(MemoryContextContains(CurrentMemoryContext, path));
+
+	Assert(path->parent && IsA(path->parent, RelOptInfo));
+	Assert(MemoryContextContains(CurrentMemoryContext, path->parent));
 
 	switch (nodeTag(path))
 	{
-		case T_Path:
-			ptype = "SeqScan";
-			break;
-		case T_IndexPath:
-			ptype = "IdxScan";
-			break;
-		case T_BitmapHeapPath:
-			ptype = "BitmapHeapScan";
-			break;
-		case T_BitmapAndPath:
-			ptype = "BitmapAndPath";
-			break;
-		case T_BitmapOrPath:
-			ptype = "BitmapOrPath";
-			break;
-		case T_TidPath:
-			ptype = "TidScan";
-			break;
-		case T_ForeignPath:
-			ptype = "ForeignScan";
-			break;
-		case T_AppendPath:
-			ptype = "Append";
-			break;
-		case T_MergeAppendPath:
-			ptype = "MergeAppend";
-			break;
-		case T_ResultPath:
-			ptype = "Result";
-			break;
-		case T_MaterialPath:
-			ptype = "Material";
-			subpath = ((MaterialPath *) path)->subpath;
+		Path *path_sub;
+		JoinPath *path_join;
+
+		case T_MaterialPath: /* Subplans: */
+			path_sub = ((MaterialPath *) path)->subpath;
+			AssertContextPath(path_sub);
 			break;
 		case T_UniquePath:
-			ptype = "Unique";
-			subpath = ((UniquePath *) path)->subpath;
+			path_sub = ((UniquePath *) path)->subpath;
+			AssertContextPath(path_sub);
 			break;
-		case T_NestPath:
-			ptype = "NestLoop";
-			join = true;
-			break;
+		case T_NestPath: /* Joins: */
 		case T_MergePath:
-			ptype = "MergeJoin";
-			join = true;
-			break;
 		case T_HashPath:
-			ptype = "HashJoin";
-			join = true;
-			break;
-		default:
-			ptype = "???Path";
+			path_join = (JoinPath*) path;
+			AssertContextPath(path_join->outerjoinpath);
+			AssertContextPath(path_join->innerjoinpath);
 			break;
 	}
 
-	sprintf(ret, "%s", ptype);
-
-	if (!join && !subpath && path->parent)
-	{
-		char *tmp = debug_get_relids(path->parent->relids);
-		sprintf(&ret[strlen(ret)], "(%s)", tmp);
-		pfree(tmp);
-	}
-
-
-	if (join)
-	{
-		char *tmp1, *tmp2;
-		JoinPath   *jp = (JoinPath *) path;
-
-		tmp1 = debug_get_path(root, jp->outerjoinpath);
-		tmp2 = debug_get_path(root, jp->innerjoinpath);
-
-		sprintf(&ret[strlen(ret)], "(%s, %s)", tmp1, tmp2);
-
-		pfree(tmp1);
-		pfree(tmp2);
-	}
-	else
-	if (subpath)
-	{
-		char *tmp = debug_get_path(root, subpath);
-		sprintf(&ret[strlen(ret)], "(%s)", tmp);
-		pfree(tmp);
-	}
-
-	return ret;
 }
 
-static void
-debug_print_reloptinfo(const char *name, PlannerInfo *root, RelOptInfo *rel)
-{
-	char* str = debug_get_path(root, rel->cheapest_total_path);
-	//char* r = nodeToString(rel);
-	//char* f = pretty_format_node_dump(r);
-	SDP_DEBUG_MSG3("%s cheapest_total_path: %s", name, str);
-	//SDP_DEBUG_MSG3("%s", f);
-	//pfree(r);
-	//pfree(f);
-	pfree(str);
-}
-
-#endif /* SDP_DEBUG3 */
+#endif /*USE_ASSERT_CHECKING*/
