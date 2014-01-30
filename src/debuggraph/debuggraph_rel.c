@@ -40,10 +40,8 @@
 #include <optimizer/clauses.h>
 #include <optimizer/cost.h>
 
-static DebugNode* get_params(DebugGraph *graph);
-static DebugNode* get_plannerinfo(DebugGraph *graph, PlannerInfo *root);
-static DebugNode* get_reloptinfo(DebugGraph *graph, PlannerInfo *root,
-		RelOptInfo *rel);
+static DebugNode* getParams(DebugGraph *graph);
+static DebugNode* getNode(DebugGraph *graph, PlannerInfo *root, Node *node);
 
 void
 printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
@@ -52,9 +50,9 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 
 	Assert(rel && IsA(rel, RelOptInfo));
 
-	get_params(graph);
-	get_plannerinfo(graph, root);
-	get_reloptinfo(graph, root, rel);
+	getParams(graph);
+	getNode(graph, root, (Node*)root);
+	getNode(graph, root, (Node*)rel);
 
 	printDebugGraph(graph);
 
@@ -66,215 +64,870 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel)
 
 #define booltostr(x)  ((x) ? "true" : "false")
 
-static DebugNode* get_params(DebugGraph *graph)
+static DebugNode* getParams(DebugGraph *graph)
 {
-	DebugNode *node;
+	DebugNode *n;
 
-	node = newDebugNode(graph, "params", "params");
+	n = newDebugNode(graph, "params", "params");
+	Assert(n);
 
-	addDebugNodeAttributeArgs(node, "seq_page_cost", "%lf", seq_page_cost);
-	addDebugNodeAttributeArgs(node, "random_page_cost", "%lf",
+	addDebugNodeAttributeArgs(n, "seq_page_cost", "%lf", seq_page_cost);
+	addDebugNodeAttributeArgs(n, "random_page_cost", "%lf",
 			random_page_cost);
-	addDebugNodeAttributeArgs(node, "cpu_tuple_cost", "%lf", cpu_tuple_cost);
-	addDebugNodeAttributeArgs(node, "cpu_index_tuple_cost", "%lf",
+	addDebugNodeAttributeArgs(n, "cpu_tuple_cost", "%lf", cpu_tuple_cost);
+	addDebugNodeAttributeArgs(n, "cpu_index_tuple_cost", "%lf",
 			cpu_index_tuple_cost);
-	addDebugNodeAttributeArgs(node, "cpu_operator_cost", "%lf",
+	addDebugNodeAttributeArgs(n, "cpu_operator_cost", "%lf",
 			cpu_operator_cost);
-	addDebugNodeAttributeArgs(node, "BLCKSZ", "%d", BLCKSZ);
-	addDebugNodeAttributeArgs(node, "sizeof(HeapTupleHeaderData)", "%u",
+	addDebugNodeAttributeArgs(n, "BLCKSZ", "%d", BLCKSZ);
+	addDebugNodeAttributeArgs(n, "sizeof(HeapTupleHeaderData)", "%u",
 			sizeof(HeapTupleHeaderData));
-	addDebugNodeAttributeArgs(node, "MAXIMUM_ALIGNOF", "%u",
+	addDebugNodeAttributeArgs(n, "MAXIMUM_ALIGNOF", "%u",
 			MAXIMUM_ALIGNOF);
 
-	addDebugNodeAttributeArgs(node, "effective_cache_size", "%d", effective_cache_size);
+	addDebugNodeAttributeArgs(n, "effective_cache_size", "%d", effective_cache_size);
 
-	addDebugNodeAttributeArgs(node, "disable_cost", "%lf", disable_cost);
+	addDebugNodeAttributeArgs(n, "disable_cost", "%lf", disable_cost);
 
-	addDebugNodeAttributeArgs(node, "enable_seqscan", "%s",
+	addDebugNodeAttributeArgs(n, "enable_seqscan", "%s",
 			booltostr(enable_seqscan));
-	addDebugNodeAttributeArgs(node, "enable_indexscan", "%s",
+	addDebugNodeAttributeArgs(n, "enable_indexscan", "%s",
 			booltostr(enable_indexscan));
-	addDebugNodeAttributeArgs(node, "enable_indexonlyscan", "%s",
+	addDebugNodeAttributeArgs(n, "enable_indexonlyscan", "%s",
 			booltostr(enable_indexonlyscan));
-	addDebugNodeAttributeArgs(node, "enable_bitmapscan", "%s",
+	addDebugNodeAttributeArgs(n, "enable_bitmapscan", "%s",
 			booltostr(enable_bitmapscan));
-	addDebugNodeAttributeArgs(node, "enable_tidscan", "%s",
+	addDebugNodeAttributeArgs(n, "enable_tidscan", "%s",
 			booltostr(enable_tidscan));
-	addDebugNodeAttributeArgs(node, "enable_sort", "%s",
+	addDebugNodeAttributeArgs(n, "enable_sort", "%s",
 			booltostr(enable_sort));
-	addDebugNodeAttributeArgs(node, "enable_hashagg", "%s",
+	addDebugNodeAttributeArgs(n, "enable_hashagg", "%s",
 			booltostr(enable_hashagg));
-	addDebugNodeAttributeArgs(node, "enable_nestloop", "%s",
+	addDebugNodeAttributeArgs(n, "enable_nestloop", "%s",
 			booltostr(enable_nestloop));
-	addDebugNodeAttributeArgs(node, "enable_material", "%s",
+	addDebugNodeAttributeArgs(n, "enable_material", "%s",
 			booltostr(enable_material));
-	addDebugNodeAttributeArgs(node, "enable_mergejoin", "%s",
+	addDebugNodeAttributeArgs(n, "enable_mergejoin", "%s",
 			booltostr(enable_mergejoin));
-	addDebugNodeAttributeArgs(node, "enable_hashjoin", "%s",
+	addDebugNodeAttributeArgs(n, "enable_hashjoin", "%s",
 			booltostr(enable_hashjoin));
 
-	return node;
+	return n;
 }
 
-static void add_relids(DebugNode *node, const char *name,
+/* ****************************** Nodes *********************************** */
+
+#define WRITE_NODE_FIELD(fldname) \
+		newDebugEdgeByNode(graph, n, \
+					getNode(graph, root, (Node*) actual_node->fldname), \
+					CppAsString(fldname))
+#define WRITE_LIST_ITEM(lc) \
+		newDebugEdgeByNode(graph, n, \
+					getNode(graph, root, (Node*) lfirst(lc)), \
+					"")
+#define WRITE_FLOAT_FIELD(fldname,format) \
+		addDebugNodeAttributeArgs(n, CppAsString(fldname), format, \
+				actual_node->fldname)
+#define WRITE_INT_FIELD(fldname) \
+		addDebugNodeAttributeArgs(n, CppAsString(fldname), "%d", \
+				actual_node->fldname)
+#define WRITE_UINT_FIELD(fldname) \
+		addDebugNodeAttributeArgs(n, CppAsString(fldname), "%u", \
+				actual_node->fldname)
+#define WRITE_OID_FIELD WRITE_UINT_FIELD
+#define WRITE_BOOL_FIELD(fldname) \
+		addDebugNodeAttributeArgs(n, CppAsString(fldname), "%s", \
+				booltostr(actual_node->fldname))
+#define WRITE_CUSTOM_FIELD(fldname, format, val) \
+		addDebugNodeAttributeArgs(n, fldname, format, \
+						val)
+
+const char* getNodeTagName(NodeTag tag);
+const char* getJoinTypeName(JoinType t);
+
+static void addRelids(DebugNode *n, const char *name,
 		PlannerInfo *root, Relids relids);
-static DebugNode* get_restrictclauses(DebugGraph *graph, PlannerInfo *root,
-		List *clauses);
-static const char* get_tag_name(NodeTag tag);
+static const char* getPathkeys(const List *pathkeys, const List *rtable);
+static const char* getExpr(const Node *expr, const List *rtable);
+static DebugNode* getTablespace(DebugGraph *graph, Oid tablespace);
+static double get_loop_count(PlannerInfo *root, Relids outer_relids);
 
-static DebugNode* get_plannerinfo(DebugGraph *graph, PlannerInfo *root)
+static void
+set_T_PlannerInfo(DebugGraph *graph, DebugNode *n,
+		PlannerInfo *ignored, Node *node)
 {
-	DebugNode  *node;
+	PlannerInfo *root = (PlannerInfo*) node;
+	PlannerInfo *actual_node = (PlannerInfo*) node;
 
-	if(!root)
-		return NULL;
+	WRITE_UINT_FIELD(query_level);
 
-	Assert(graph);
-	Assert(IsA(root, PlannerInfo));
+	WRITE_NODE_FIELD(parent_root);
 
-	node  = newDebugNodeByPointer(graph, root, "PlannerInfo");
-	Assert(node);
-	if (node->create_node_again)
-		return node;
+	addRelids(n, "all_baserels", root, root->all_baserels);
 
-	addDebugNodeAttributeArgs(node, "type", "%d", root->type);
-	addDebugNodeAttributeArgs(node, "type_name", "%s",
-			get_tag_name(root->type));
+	WRITE_NODE_FIELD(left_join_clauses);
+	WRITE_NODE_FIELD(right_join_clauses);
+	WRITE_NODE_FIELD(full_join_clauses);
+	WRITE_NODE_FIELD(initial_rels);
 
-	addDebugNodeAttributeArgs(node, "query_level", "%u", root->query_level);
-
-	newDebugEdgeByNode(graph, node,
-			get_plannerinfo(graph, root->parent_root), "parent_root");
-
-	add_relids(node, "all_baserels", root, root->all_baserels);
-
-	newDebugEdgeByNode(graph, node,
-			get_restrictclauses(graph, root, root->left_join_clauses),
-			"left_join_clauses");
-	newDebugEdgeByNode(graph, node,
-			get_restrictclauses(graph, root, root->right_join_clauses),
-			"right_join_clauses");
-	newDebugEdgeByNode(graph, node,
-			get_restrictclauses(graph, root, root->full_join_clauses),
-			"full_join_clauses");
-
-	{
-		DebugNode *list = (root->initial_rels)
-					?newDebugNodeByPointer(graph, root->initial_rels,
-							"initial_rels")
-					:NULL;
-		newDebugEdgeByNode(graph, node, list, "initial_rels");
-		if (list)
-		{
-			ListCell *lc;
-			foreach(lc, root->initial_rels)
-			{
-				RelOptInfo *rel = (RelOptInfo*) lfirst(lc);
-				DebugNode *node_rel = get_reloptinfo(graph, root, rel);
-				newDebugEdgeByNode(graph, list, node_rel, "");
-			}
-		}
-	}
-
-	addDebugNodeAttributeArgs(node, "total_table_pages", "%lf",
-			root->total_table_pages);
-	addDebugNodeAttributeArgs(node, "tuple_fraction", "%lf",
-			root->tuple_fraction);
-	addDebugNodeAttributeArgs(node, "limit_tuples", "%lf",
-			root->limit_tuples);
-
-	return node;
+	WRITE_FLOAT_FIELD(total_table_pages, "%lf");
+	WRITE_FLOAT_FIELD(tuple_fraction, "%lf");
+	WRITE_FLOAT_FIELD(limit_tuples, "%lf");
 }
 
-static DebugNode* get_path(DebugGraph *graph, PlannerInfo *root,
-		Path *path);
-static const char* get_pathkeys(const List *pathkeys, const List *rtable);
-static const char* get_expr(const Node *expr, const List *rtable);
-static DebugNode* get_tablespace(DebugGraph *graph, Oid tablespace);
-
-static DebugNode*
-get_reloptinfo(DebugGraph *graph, PlannerInfo *root, RelOptInfo *rel)
+static void
+set_T_RelOptInfo(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
 {
-	DebugNode  *node;
+	RelOptInfo *actual_node = (RelOptInfo*) node;
 
-	Assert(graph && root);
+	addRelids(n, "relids", root, actual_node->relids);
+	addRelids(n, "lateral_relids", root, actual_node->lateral_relids);
+	WRITE_FLOAT_FIELD(rows, "%lf");
+	WRITE_INT_FIELD(width);
+	WRITE_BOOL_FIELD(consider_startup);
 
-	if (!rel)
-		return NULL;
+	WRITE_UINT_FIELD(relid);
+	newDebugEdgeByNode(graph, n,
+			getTablespace(graph, actual_node->reltablespace), "reltablespace");
+	WRITE_INT_FIELD(rtekind);
+	WRITE_FLOAT_FIELD(tuples, "%lf");
+	WRITE_FLOAT_FIELD(allvisfrac, "%lf");
+	WRITE_UINT_FIELD(pages);
 
-	node  = newDebugNodeByPointer(graph, rel, "RelOptInfo");
-	Assert(node);
-	if (node->create_node_again)
-		return node;
+	WRITE_NODE_FIELD(pathlist);
+	WRITE_NODE_FIELD(cheapest_startup_path);
+	WRITE_NODE_FIELD(cheapest_total_path);
+	WRITE_NODE_FIELD(baserestrictinfo);
 
-	addDebugNodeAttributeArgs(node, "type", "%d", rel->type);
-	addDebugNodeAttributeArgs(node, "type_name", "%s",
-			get_tag_name(rel->type));
+	WRITE_FLOAT_FIELD(baserestrictcost.startup, "%lf");
+	WRITE_FLOAT_FIELD(baserestrictcost.per_tuple, "%lf");
 
-	add_relids(node, "relids", root, rel->relids);
-	add_relids(node, "lateral_relids", root, rel->lateral_relids);
-	addDebugNodeAttributeArgs(node, "rows", "%lf", rel->rows);
-	addDebugNodeAttributeArgs(node, "width", "%d", rel->width);
-	addDebugNodeAttributeArgs(node, "consider_startup", "%s",
-			booltostr(rel->consider_startup));
-
-	addDebugNodeAttributeArgs(node, "relid", "%u", rel->relid);
-	//addDebugNodeAttributeArgs(node, "reltablespace", "%u", rel->reltablespace);
-	newDebugEdgeByNode(graph, node,
-			get_tablespace(graph, rel->reltablespace), "reltablespace");
-	addDebugNodeAttributeArgs(node, "rtekind", "%d", rel->rtekind);
-	addDebugNodeAttributeArgs(node, "tuples", "%lf", rel->tuples);
-	addDebugNodeAttributeArgs(node, "allvisfrac", "%lf", rel->allvisfrac);
-	addDebugNodeAttributeArgs(node, "pages", "%u", rel->pages);
-
-	if (rel->pathlist)
-	{
-		ListCell   *l;
-		DebugNode  *node_list = newDebugNodeByPointer(graph, rel->pathlist,
-				"List");
-
-		Assert(node_list);
-		addDebugNodeAttributeArgs(node_list, "type", "%d", rel->pathlist->type);
-		addDebugNodeAttributeArgs(node_list, "type_name", "%s",
-				get_tag_name(rel->pathlist->type));
-		newDebugEdgeByName(graph, node->internal_name, node_list->internal_name,
-				"pathlist");
-
-		foreach(l, rel->pathlist)
-		{
-			DebugNode  *n;
-			n = get_path(graph, root, lfirst(l));
-			Assert(n);
-			newDebugEdgeByName(graph, node_list->internal_name,
-					n->internal_name, "");
-
-			if (lfirst(l) == rel->cheapest_startup_path)
-				newDebugEdgeByName(graph, node->internal_name,
-									n->internal_name, "cheapest_startup_path");
-			if (lfirst(l) == rel->cheapest_total_path)
-				newDebugEdgeByName(graph, node->internal_name,
-									n->internal_name, "cheapest_total_path");
-		}
-	}
-
-	newDebugEdgeByNode(graph, node,
-			get_restrictclauses(graph, root, rel->baserestrictinfo),
-			"baserestrictinfo");
-	addDebugNodeAttributeArgs(node, "baserestrictcost.startup", "%lf",
-			rel->baserestrictcost.startup);
-	addDebugNodeAttributeArgs(node, "baserestrictcost.per_tuple", "%lf",
-			rel->baserestrictcost.per_tuple);
-	newDebugEdgeByNode(graph, node,
-			get_restrictclauses(graph, root, rel->joininfo),
-			"joininfo");
-	addDebugNodeAttributeArgs(node, "has_eclass_joins", "%s",
-			booltostr(rel->has_eclass_joins));
+	WRITE_NODE_FIELD(joininfo);
+	WRITE_BOOL_FIELD(has_eclass_joins);
 
 	/* pseudo attribute. Is there more than one root per reloptinfo? */
-	newDebugEdgeByNode(graph, node, get_plannerinfo(graph, root), "_root");
-
-	return node;
+	newDebugEdgeByNode(graph, n, getNode(graph, root, (Node*)root), "_root");
 }
+
+static void
+set_T_RestrictInfo(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	RestrictInfo *actual_node = (RestrictInfo*) node;
+
+	{const char *aux;
+	aux = getExpr((Node *) actual_node->clause, root->parse->rtable);
+	WRITE_CUSTOM_FIELD("clause", "%s", aux);
+	pfree((void*)aux);
+	aux = getExpr((Node *) actual_node->orclause, root->parse->rtable);
+	WRITE_CUSTOM_FIELD("orclause", "%s", aux);
+	pfree((void*)aux);}
+
+	WRITE_BOOL_FIELD(is_pushed_down);
+	WRITE_BOOL_FIELD(outerjoin_delayed);
+	WRITE_BOOL_FIELD(can_join);
+	WRITE_BOOL_FIELD(pseudoconstant);
+	WRITE_FLOAT_FIELD(eval_cost.startup, "%lf");
+	WRITE_FLOAT_FIELD(eval_cost.per_tuple, "%lf");
+	WRITE_FLOAT_FIELD(norm_selec, "%lf");
+	WRITE_FLOAT_FIELD(outer_selec, "%lf");
+}
+
+static void
+set_T_Path(DebugGraph *graph, DebugNode *n, PlannerInfo *root, Node *node)
+{
+	Path *actual_node = (Path*) node;
+
+	WRITE_CUSTOM_FIELD("pathtype", "%s", getNodeTagName(actual_node->pathtype));
+
+	WRITE_NODE_FIELD(parent);
+	WRITE_NODE_FIELD(param_info);
+
+	{double loops = 1.0;
+	if (actual_node->param_info)
+		loops = get_loop_count(root, actual_node->param_info->ppi_req_outer);
+	WRITE_CUSTOM_FIELD("loops", "%lf", loops);}
+
+	WRITE_FLOAT_FIELD(startup_cost, "%lf");
+	WRITE_FLOAT_FIELD(total_cost, "%lf");
+	WRITE_FLOAT_FIELD(rows, "%lf");
+
+	{const char *aux = getPathkeys(actual_node->pathkeys,
+	                                 root->parse->rtable);
+	WRITE_CUSTOM_FIELD("pathkeys", "%s", aux);
+	pfree((void*)aux);}
+}
+
+#define set_T_BitmapHeapPath set_T_Path
+#define set_T_BitmapAndPath set_T_Path
+#define set_T_BitmapOrPath set_T_Path
+#define set_T_TidPath set_T_Path
+#define set_T_ForeignPath set_T_Path
+#define set_T_AppendPath set_T_Path
+#define set_T_ResultPath set_T_Path
+
+static void
+set_T_IndexPath(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	IndexPath *actual_node = (IndexPath*) node;
+	set_T_Path(graph, n, root, node); /* inheritance */
+
+	WRITE_NODE_FIELD(indexinfo);
+	WRITE_NODE_FIELD(indexclauses);
+	WRITE_NODE_FIELD(indexquals);
+	WRITE_NODE_FIELD(indexorderbys);
+	WRITE_INT_FIELD(indexscandir);
+
+	{Cost indexStartupCost=0, indexTotalCost=0, indexSelectivity=0,
+	     indexCorrelation=0;
+	if (actual_node->indexinfo && actual_node->path.param_info)
+		OidFunctionCall7(actual_node->indexinfo->amcostestimate,
+	                     PointerGetDatum(root),
+	                     PointerGetDatum(actual_node),
+	                     Float8GetDatum(get_loop_count(root,
+	                           actual_node->path.param_info->ppi_req_outer)),
+	                     PointerGetDatum(&indexStartupCost),
+	                     PointerGetDatum(&indexTotalCost),
+	                     PointerGetDatum(&indexSelectivity),
+	                     PointerGetDatum(&indexCorrelation));
+	WRITE_CUSTOM_FIELD("indexstartupcost", "%lf", indexStartupCost);
+	WRITE_CUSTOM_FIELD("indexcorrelation", "%le", indexCorrelation);}
+
+	WRITE_FLOAT_FIELD(indextotalcost, "%lf");
+	WRITE_FLOAT_FIELD(indexselectivity, "%le");
+}
+
+static void
+set_T_MergeAppendPath(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	MergePath  *actual_node = (MergePath *) node;
+	set_T_Path(graph, n, root, node); /* inheritance */
+
+	WRITE_BOOL_FIELD(outersortkeys);
+	WRITE_BOOL_FIELD(innersortkeys);
+	WRITE_BOOL_FIELD(materialize_inner);
+}
+
+static void
+set_T_MaterialPath(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	MaterialPath *actual_node = (MaterialPath*) node;
+	set_T_Path(graph, n, root, node); /* inheritance */
+
+	WRITE_NODE_FIELD(subpath);
+}
+
+static void
+set_T_UniquePath(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	UniquePath *actual_node = (UniquePath*) node;
+	set_T_Path(graph, n, root, node); /* inheritance */
+
+	WRITE_NODE_FIELD(subpath);
+}
+
+static void
+set_T_JoinPath(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	JoinPath *actual_node = (JoinPath*) node;
+	set_T_Path(graph, n, root, node); /* inheritance */
+
+	WRITE_CUSTOM_FIELD("jointype", "%s",
+			getJoinTypeName(actual_node->jointype));
+
+	WRITE_NODE_FIELD(joinrestrictinfo);
+	WRITE_NODE_FIELD(outerjoinpath);
+	WRITE_NODE_FIELD(innerjoinpath);
+}
+
+#define set_T_NestPath set_T_JoinPath
+
+static void
+set_T_MergePath(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	MergePath *actual_node = (MergePath*) node;
+	set_T_JoinPath(graph, n, root, node); /* inheritance */
+
+	WRITE_NODE_FIELD(path_mergeclauses);
+	WRITE_NODE_FIELD(outersortkeys);
+	WRITE_NODE_FIELD(innersortkeys);
+	WRITE_BOOL_FIELD(materialize_inner);
+}
+
+static void
+set_T_HashPath(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	HashPath *actual_node = (HashPath*) node;
+	set_T_JoinPath(graph, n, root, node); /* inheritance */
+
+	WRITE_NODE_FIELD(path_hashclauses);
+	WRITE_INT_FIELD(num_batches);
+}
+
+static void
+set_T_ParamPathInfo(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	ParamPathInfo *actual_node = (ParamPathInfo*) node;
+
+	addRelids(n, "ppi_req_outer", root, actual_node->ppi_req_outer);
+	WRITE_FLOAT_FIELD(ppi_rows, "%lf");
+
+	WRITE_NODE_FIELD(ppi_clauses);
+}
+
+static void
+set_T_IndexOptInfo(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	IndexOptInfo *actual_node = (IndexOptInfo*) node;
+
+	/* NB: this isn't a complete set of fields */
+	WRITE_OID_FIELD(indexoid);
+
+	WRITE_NODE_FIELD(rel);
+
+	WRITE_UINT_FIELD(indexoid);
+	newDebugEdgeByNode(graph, n,
+			getTablespace(graph, actual_node->reltablespace), "reltablespace");
+
+	WRITE_UINT_FIELD(pages);
+	WRITE_FLOAT_FIELD(tuples, "%lf");
+	WRITE_INT_FIELD(tree_height);
+	WRITE_INT_FIELD(ncolumns);
+	WRITE_OID_FIELD(relam);
+	WRITE_UINT_FIELD(amcostestimate);
+
+	//List	   *indpred;		/* predicate if a partial index, else NIL */
+	//List	   *indextlist;		/* targetlist representing index columns */
+
+	WRITE_BOOL_FIELD(reverse_sort);
+	WRITE_BOOL_FIELD(nulls_first);
+	WRITE_BOOL_FIELD(predOK);
+	WRITE_BOOL_FIELD(unique);
+	WRITE_BOOL_FIELD(immediate);
+	WRITE_BOOL_FIELD(hypothetical);
+	WRITE_BOOL_FIELD(canreturn);
+}
+
+static void
+set_T_List(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
+		Node *node)
+{
+	List *actual_node = (List*) node;
+	ListCell *lc;
+
+	foreach(lc, actual_node)
+	{
+
+		WRITE_LIST_ITEM(lc);
+	}
+}
+
+/* ***************************** getNode ********************************** */
+
+#define ENUM_MAP_N(name) name, CppAsString(name), NULL
+#define ENUM_MAP_F(name) name, CppAsString(name), set_ ## name
+typedef void (setNodeType)(DebugGraph*,DebugNode*,PlannerInfo*,Node*);
+typedef struct NodeTagMapType
+{
+	NodeTag      tag;
+	const char *name;
+	setNodeType *setNode;
+} NodeTagMapType;
+
+const NodeTagMapType nodetag_maps[] = {
+		{ENUM_MAP_N(T_Invalid)},
+
+		/*
+		 * TAGS FOR EXECUTOR NODES (execnodes.h)
+		 */
+		{ENUM_MAP_N(T_IndexInfo)},
+		{ENUM_MAP_N(T_ExprContext)},
+		{ENUM_MAP_N(T_ProjectionInfo)},
+		{ENUM_MAP_N(T_JunkFilter)},
+		{ENUM_MAP_N(T_ResultRelInfo)},
+		{ENUM_MAP_N(T_EState)},
+		{ENUM_MAP_N(T_TupleTableSlot)},
+
+		/*
+		 * TAGS FOR PLAN NODES (plannodes.h)
+		 */
+		{ENUM_MAP_N(T_Plan)},
+		{ENUM_MAP_N(T_Result)},
+		{ENUM_MAP_N(T_ModifyTable)},
+		{ENUM_MAP_N(T_Append)},
+		{ENUM_MAP_N(T_MergeAppend)},
+		{ENUM_MAP_N(T_RecursiveUnion)},
+		{ENUM_MAP_N(T_BitmapAnd)},
+		{ENUM_MAP_N(T_BitmapOr)},
+		{ENUM_MAP_N(T_Scan)},
+		{ENUM_MAP_N(T_SeqScan)},
+		{ENUM_MAP_N(T_IndexScan)},
+		{ENUM_MAP_N(T_IndexOnlyScan)},
+		{ENUM_MAP_N(T_BitmapIndexScan)},
+		{ENUM_MAP_N(T_BitmapHeapScan)},
+		{ENUM_MAP_N(T_TidScan)},
+		{ENUM_MAP_N(T_SubqueryScan)},
+		{ENUM_MAP_N(T_FunctionScan)},
+		{ENUM_MAP_N(T_ValuesScan)},
+		{ENUM_MAP_N(T_CteScan)},
+		{ENUM_MAP_N(T_WorkTableScan)},
+		{ENUM_MAP_N(T_ForeignScan)},
+		{ENUM_MAP_N(T_Join)},
+		{ENUM_MAP_N(T_NestLoop)},
+		{ENUM_MAP_N(T_MergeJoin)},
+		{ENUM_MAP_N(T_HashJoin)},
+		{ENUM_MAP_N(T_Material)},
+		{ENUM_MAP_N(T_Sort)},
+		{ENUM_MAP_N(T_Group)},
+		{ENUM_MAP_N(T_Agg)},
+		{ENUM_MAP_N(T_WindowAgg)},
+		{ENUM_MAP_N(T_Unique)},
+		{ENUM_MAP_N(T_Hash)},
+		{ENUM_MAP_N(T_SetOp)},
+		{ENUM_MAP_N(T_LockRows)},
+		{ENUM_MAP_N(T_Limit)},
+		/* these aren't subclasses of Plan: */
+		{ENUM_MAP_N(T_NestLoopParam)},
+		{ENUM_MAP_N(T_PlanRowMark)},
+		{ENUM_MAP_N(T_PlanInvalItem)},
+
+		/*
+		 * TAGS FOR PLAN STATE NODES (execnodes.h)
+		 *
+		 * These should correspond one-to-one with Plan node types.
+		 */
+		{ENUM_MAP_N(T_PlanState)},
+		{ENUM_MAP_N(T_ResultState)},
+		{ENUM_MAP_N(T_ModifyTableState)},
+		{ENUM_MAP_N(T_AppendState)},
+		{ENUM_MAP_N(T_MergeAppendState)},
+		{ENUM_MAP_N(T_RecursiveUnionState)},
+		{ENUM_MAP_N(T_BitmapAndState)},
+		{ENUM_MAP_N(T_BitmapOrState)},
+		{ENUM_MAP_N(T_ScanState)},
+		{ENUM_MAP_N(T_SeqScanState)},
+		{ENUM_MAP_N(T_IndexScanState)},
+		{ENUM_MAP_N(T_IndexOnlyScanState)},
+		{ENUM_MAP_N(T_BitmapIndexScanState)},
+		{ENUM_MAP_N(T_BitmapHeapScanState)},
+		{ENUM_MAP_N(T_TidScanState)},
+		{ENUM_MAP_N(T_SubqueryScanState)},
+		{ENUM_MAP_N(T_FunctionScanState)},
+		{ENUM_MAP_N(T_ValuesScanState)},
+		{ENUM_MAP_N(T_CteScanState)},
+		{ENUM_MAP_N(T_WorkTableScanState)},
+		{ENUM_MAP_N(T_ForeignScanState)},
+		{ENUM_MAP_N(T_JoinState)},
+		{ENUM_MAP_N(T_NestLoopState)},
+		{ENUM_MAP_N(T_MergeJoinState)},
+		{ENUM_MAP_N(T_HashJoinState)},
+		{ENUM_MAP_N(T_MaterialState)},
+		{ENUM_MAP_N(T_SortState)},
+		{ENUM_MAP_N(T_GroupState)},
+		{ENUM_MAP_N(T_AggState)},
+		{ENUM_MAP_N(T_WindowAggState)},
+		{ENUM_MAP_N(T_UniqueState)},
+		{ENUM_MAP_N(T_HashState)},
+		{ENUM_MAP_N(T_SetOpState)},
+		{ENUM_MAP_N(T_LockRowsState)},
+		{ENUM_MAP_N(T_LimitState)},
+
+		/*
+		 * TAGS FOR PRIMITIVE NODES (primnodes.h)
+		 */
+		{ENUM_MAP_N(T_Alias)},
+		{ENUM_MAP_N(T_RangeVar)},
+		{ENUM_MAP_N(T_Expr)},
+		{ENUM_MAP_N(T_Var)},
+		{ENUM_MAP_N(T_Const)},
+		{ENUM_MAP_N(T_Param)},
+		{ENUM_MAP_N(T_Aggref)},
+		{ENUM_MAP_N(T_WindowFunc)},
+		{ENUM_MAP_N(T_ArrayRef)},
+		{ENUM_MAP_N(T_FuncExpr)},
+		{ENUM_MAP_N(T_NamedArgExpr)},
+		{ENUM_MAP_N(T_OpExpr)},
+		{ENUM_MAP_N(T_DistinctExpr)},
+		{ENUM_MAP_N(T_NullIfExpr)},
+		{ENUM_MAP_N(T_ScalarArrayOpExpr)},
+		{ENUM_MAP_N(T_BoolExpr)},
+		{ENUM_MAP_N(T_SubLink)},
+		{ENUM_MAP_N(T_SubPlan)},
+		{ENUM_MAP_N(T_AlternativeSubPlan)},
+		{ENUM_MAP_N(T_FieldSelect)},
+		{ENUM_MAP_N(T_FieldStore)},
+		{ENUM_MAP_N(T_RelabelType)},
+		{ENUM_MAP_N(T_CoerceViaIO)},
+		{ENUM_MAP_N(T_ArrayCoerceExpr)},
+		{ENUM_MAP_N(T_ConvertRowtypeExpr)},
+		{ENUM_MAP_N(T_CollateExpr)},
+		{ENUM_MAP_N(T_CaseExpr)},
+		{ENUM_MAP_N(T_CaseWhen)},
+		{ENUM_MAP_N(T_CaseTestExpr)},
+		{ENUM_MAP_N(T_ArrayExpr)},
+		{ENUM_MAP_N(T_RowExpr)},
+		{ENUM_MAP_N(T_RowCompareExpr)},
+		{ENUM_MAP_N(T_CoalesceExpr)},
+		{ENUM_MAP_N(T_MinMaxExpr)},
+		{ENUM_MAP_N(T_XmlExpr)},
+		{ENUM_MAP_N(T_NullTest)},
+		{ENUM_MAP_N(T_BooleanTest)},
+		{ENUM_MAP_N(T_CoerceToDomain)},
+		{ENUM_MAP_N(T_CoerceToDomainValue)},
+		{ENUM_MAP_N(T_SetToDefault)},
+		{ENUM_MAP_N(T_CurrentOfExpr)},
+		{ENUM_MAP_N(T_TargetEntry)},
+		{ENUM_MAP_N(T_RangeTblRef)},
+		{ENUM_MAP_N(T_JoinExpr)},
+		{ENUM_MAP_N(T_FromExpr)},
+		{ENUM_MAP_N(T_IntoClause)},
+
+		/*
+		 * TAGS FOR EXPRESSION STATE NODES (execnodes.h)
+		 *
+		 * These correspond (not always one-for-one) to primitive nodes derived
+		 * from Expr.
+		 */
+		{ENUM_MAP_N(T_ExprState)},
+		{ENUM_MAP_N(T_GenericExprState)},
+		{ENUM_MAP_N(T_WholeRowVarExprState)},
+		{ENUM_MAP_N(T_AggrefExprState)},
+		{ENUM_MAP_N(T_WindowFuncExprState)},
+		{ENUM_MAP_N(T_ArrayRefExprState)},
+		{ENUM_MAP_N(T_FuncExprState)},
+		{ENUM_MAP_N(T_ScalarArrayOpExprState)},
+		{ENUM_MAP_N(T_BoolExprState)},
+		{ENUM_MAP_N(T_SubPlanState)},
+		{ENUM_MAP_N(T_AlternativeSubPlanState)},
+		{ENUM_MAP_N(T_FieldSelectState)},
+		{ENUM_MAP_N(T_FieldStoreState)},
+		{ENUM_MAP_N(T_CoerceViaIOState)},
+		{ENUM_MAP_N(T_ArrayCoerceExprState)},
+		{ENUM_MAP_N(T_ConvertRowtypeExprState)},
+		{ENUM_MAP_N(T_CaseExprState)},
+		{ENUM_MAP_N(T_CaseWhenState)},
+		{ENUM_MAP_N(T_ArrayExprState)},
+		{ENUM_MAP_N(T_RowExprState)},
+		{ENUM_MAP_N(T_RowCompareExprState)},
+		{ENUM_MAP_N(T_CoalesceExprState)},
+		{ENUM_MAP_N(T_MinMaxExprState)},
+		{ENUM_MAP_N(T_XmlExprState)},
+		{ENUM_MAP_N(T_NullTestState)},
+		{ENUM_MAP_N(T_CoerceToDomainState)},
+		{ENUM_MAP_N(T_DomainConstraintState)},
+
+		/*
+		 * TAGS FOR PLANNER NODES (relation.h)
+		 */
+		{ENUM_MAP_F(T_PlannerInfo)},
+		{ENUM_MAP_N(T_PlannerGlobal)},
+		{ENUM_MAP_F(T_RelOptInfo)},
+		{ENUM_MAP_F(T_IndexOptInfo)},
+		{ENUM_MAP_F(T_ParamPathInfo)},
+		{ENUM_MAP_F(T_Path)},
+		{ENUM_MAP_F(T_IndexPath)},
+		{ENUM_MAP_F(T_BitmapHeapPath)},
+		{ENUM_MAP_F(T_BitmapAndPath)},
+		{ENUM_MAP_F(T_BitmapOrPath)},
+		{ENUM_MAP_F(T_NestPath)},
+		{ENUM_MAP_F(T_MergePath)},
+		{ENUM_MAP_F(T_HashPath)},
+		{ENUM_MAP_F(T_TidPath)},
+		{ENUM_MAP_F(T_ForeignPath)},
+		{ENUM_MAP_F(T_AppendPath)},
+		{ENUM_MAP_F(T_MergeAppendPath)},
+		{ENUM_MAP_F(T_ResultPath)},
+		{ENUM_MAP_F(T_MaterialPath)},
+		{ENUM_MAP_F(T_UniquePath)},
+		{ENUM_MAP_N(T_EquivalenceClass)},
+		{ENUM_MAP_N(T_EquivalenceMember)},
+		{ENUM_MAP_N(T_PathKey)},
+		{ENUM_MAP_F(T_RestrictInfo)},
+		{ENUM_MAP_N(T_PlaceHolderVar)},
+		{ENUM_MAP_N(T_SpecialJoinInfo)},
+		{ENUM_MAP_N(T_LateralJoinInfo)},
+		{ENUM_MAP_N(T_AppendRelInfo)},
+		{ENUM_MAP_N(T_PlaceHolderInfo)},
+		{ENUM_MAP_N(T_MinMaxAggInfo)},
+		{ENUM_MAP_N(T_PlannerParamItem)},
+
+		/*
+		 * TAGS FOR MEMORY NODES (memnodes.h)
+		 */
+		{ENUM_MAP_N(T_MemoryContext)},
+		{ENUM_MAP_N(T_AllocSetContext)},
+
+		/*
+		 * TAGS FOR VALUE NODES (value.h)
+		 */
+		{ENUM_MAP_N(T_Value)},
+		{ENUM_MAP_N(T_Integer)},
+		{ENUM_MAP_N(T_Float)},
+		{ENUM_MAP_N(T_String)},
+		{ENUM_MAP_N(T_BitString)},
+		{ENUM_MAP_N(T_Null)},
+
+		/*
+		 * TAGS FOR LIST NODES (pg_list.h)
+		 */
+		{ENUM_MAP_F(T_List)},
+		{ENUM_MAP_N(T_IntList)},
+		{ENUM_MAP_N(T_OidList)},
+
+		/*
+		 * TAGS FOR STATEMENT NODES (mostly in parsenodes.h)
+		 */
+		{ENUM_MAP_N(T_Query)},
+		{ENUM_MAP_N(T_PlannedStmt)},
+		{ENUM_MAP_N(T_InsertStmt)},
+		{ENUM_MAP_N(T_DeleteStmt)},
+		{ENUM_MAP_N(T_UpdateStmt)},
+		{ENUM_MAP_N(T_SelectStmt)},
+		{ENUM_MAP_N(T_AlterTableStmt)},
+		{ENUM_MAP_N(T_AlterTableCmd)},
+		{ENUM_MAP_N(T_AlterDomainStmt)},
+		{ENUM_MAP_N(T_SetOperationStmt)},
+		{ENUM_MAP_N(T_GrantStmt)},
+		{ENUM_MAP_N(T_GrantRoleStmt)},
+		{ENUM_MAP_N(T_AlterDefaultPrivilegesStmt)},
+		{ENUM_MAP_N(T_ClosePortalStmt)},
+		{ENUM_MAP_N(T_ClusterStmt)},
+		{ENUM_MAP_N(T_CopyStmt)},
+		{ENUM_MAP_N(T_CreateStmt)},
+		{ENUM_MAP_N(T_DefineStmt)},
+		{ENUM_MAP_N(T_DropStmt)},
+		{ENUM_MAP_N(T_TruncateStmt)},
+		{ENUM_MAP_N(T_CommentStmt)},
+		{ENUM_MAP_N(T_FetchStmt)},
+		{ENUM_MAP_N(T_IndexStmt)},
+		{ENUM_MAP_N(T_CreateFunctionStmt)},
+		{ENUM_MAP_N(T_AlterFunctionStmt)},
+		{ENUM_MAP_N(T_DoStmt)},
+		{ENUM_MAP_N(T_RenameStmt)},
+		{ENUM_MAP_N(T_RuleStmt)},
+		{ENUM_MAP_N(T_NotifyStmt)},
+		{ENUM_MAP_N(T_ListenStmt)},
+		{ENUM_MAP_N(T_UnlistenStmt)},
+		{ENUM_MAP_N(T_TransactionStmt)},
+		{ENUM_MAP_N(T_ViewStmt)},
+		{ENUM_MAP_N(T_LoadStmt)},
+		{ENUM_MAP_N(T_CreateDomainStmt)},
+		{ENUM_MAP_N(T_CreatedbStmt)},
+		{ENUM_MAP_N(T_DropdbStmt)},
+		{ENUM_MAP_N(T_VacuumStmt)},
+		{ENUM_MAP_N(T_ExplainStmt)},
+		{ENUM_MAP_N(T_CreateTableAsStmt)},
+		{ENUM_MAP_N(T_CreateSeqStmt)},
+		{ENUM_MAP_N(T_AlterSeqStmt)},
+		{ENUM_MAP_N(T_VariableSetStmt)},
+		{ENUM_MAP_N(T_VariableShowStmt)},
+		{ENUM_MAP_N(T_DiscardStmt)},
+		{ENUM_MAP_N(T_CreateTrigStmt)},
+		{ENUM_MAP_N(T_CreatePLangStmt)},
+		{ENUM_MAP_N(T_CreateRoleStmt)},
+		{ENUM_MAP_N(T_AlterRoleStmt)},
+		{ENUM_MAP_N(T_DropRoleStmt)},
+		{ENUM_MAP_N(T_LockStmt)},
+		{ENUM_MAP_N(T_ConstraintsSetStmt)},
+		{ENUM_MAP_N(T_ReindexStmt)},
+		{ENUM_MAP_N(T_CheckPointStmt)},
+		{ENUM_MAP_N(T_CreateSchemaStmt)},
+		{ENUM_MAP_N(T_AlterDatabaseStmt)},
+		{ENUM_MAP_N(T_AlterDatabaseSetStmt)},
+		{ENUM_MAP_N(T_AlterRoleSetStmt)},
+		{ENUM_MAP_N(T_CreateConversionStmt)},
+		{ENUM_MAP_N(T_CreateCastStmt)},
+		{ENUM_MAP_N(T_CreateOpClassStmt)},
+		{ENUM_MAP_N(T_CreateOpFamilyStmt)},
+		{ENUM_MAP_N(T_AlterOpFamilyStmt)},
+		{ENUM_MAP_N(T_PrepareStmt)},
+		{ENUM_MAP_N(T_ExecuteStmt)},
+		{ENUM_MAP_N(T_DeallocateStmt)},
+		{ENUM_MAP_N(T_DeclareCursorStmt)},
+		{ENUM_MAP_N(T_CreateTableSpaceStmt)},
+		{ENUM_MAP_N(T_DropTableSpaceStmt)},
+		{ENUM_MAP_N(T_AlterObjectSchemaStmt)},
+		{ENUM_MAP_N(T_AlterOwnerStmt)},
+		{ENUM_MAP_N(T_DropOwnedStmt)},
+		{ENUM_MAP_N(T_ReassignOwnedStmt)},
+		{ENUM_MAP_N(T_CompositeTypeStmt)},
+		{ENUM_MAP_N(T_CreateEnumStmt)},
+		{ENUM_MAP_N(T_CreateRangeStmt)},
+		{ENUM_MAP_N(T_AlterEnumStmt)},
+		{ENUM_MAP_N(T_AlterTSDictionaryStmt)},
+		{ENUM_MAP_N(T_AlterTSConfigurationStmt)},
+		{ENUM_MAP_N(T_CreateFdwStmt)},
+		{ENUM_MAP_N(T_AlterFdwStmt)},
+		{ENUM_MAP_N(T_CreateForeignServerStmt)},
+		{ENUM_MAP_N(T_AlterForeignServerStmt)},
+		{ENUM_MAP_N(T_CreateUserMappingStmt)},
+		{ENUM_MAP_N(T_AlterUserMappingStmt)},
+		{ENUM_MAP_N(T_DropUserMappingStmt)},
+		{ENUM_MAP_N(T_AlterTableSpaceOptionsStmt)},
+		{ENUM_MAP_N(T_SecLabelStmt)},
+		{ENUM_MAP_N(T_CreateForeignTableStmt)},
+		{ENUM_MAP_N(T_CreateExtensionStmt)},
+		{ENUM_MAP_N(T_AlterExtensionStmt)},
+		{ENUM_MAP_N(T_AlterExtensionContentsStmt)},
+		{ENUM_MAP_N(T_CreateEventTrigStmt)},
+		{ENUM_MAP_N(T_AlterEventTrigStmt)},
+		{ENUM_MAP_N(T_RefreshMatViewStmt)},
+
+		/*
+		 * TAGS FOR PARSE TREE NODES (parsenodes.h)
+		 */
+		{ENUM_MAP_N(T_A_Expr)},
+		{ENUM_MAP_N(T_ColumnRef)},
+		{ENUM_MAP_N(T_ParamRef)},
+		{ENUM_MAP_N(T_A_Const)},
+		{ENUM_MAP_N(T_FuncCall)},
+		{ENUM_MAP_N(T_A_Star)},
+		{ENUM_MAP_N(T_A_Indices)},
+		{ENUM_MAP_N(T_A_Indirection)},
+		{ENUM_MAP_N(T_A_ArrayExpr)},
+		{ENUM_MAP_N(T_ResTarget)},
+		{ENUM_MAP_N(T_TypeCast)},
+		{ENUM_MAP_N(T_CollateClause)},
+		{ENUM_MAP_N(T_SortBy)},
+		{ENUM_MAP_N(T_WindowDef)},
+		{ENUM_MAP_N(T_RangeSubselect)},
+		{ENUM_MAP_N(T_RangeFunction)},
+		{ENUM_MAP_N(T_TypeName)},
+		{ENUM_MAP_N(T_ColumnDef)},
+		{ENUM_MAP_N(T_IndexElem)},
+		{ENUM_MAP_N(T_Constraint)},
+		{ENUM_MAP_N(T_DefElem)},
+		{ENUM_MAP_N(T_RangeTblEntry)},
+		{ENUM_MAP_N(T_SortGroupClause)},
+		{ENUM_MAP_N(T_WindowClause)},
+		{ENUM_MAP_N(T_PrivGrantee)},
+		{ENUM_MAP_N(T_FuncWithArgs)},
+		{ENUM_MAP_N(T_AccessPriv)},
+		{ENUM_MAP_N(T_CreateOpClassItem)},
+		{ENUM_MAP_N(T_TableLikeClause)},
+		{ENUM_MAP_N(T_FunctionParameter)},
+		{ENUM_MAP_N(T_LockingClause)},
+		{ENUM_MAP_N(T_RowMarkClause)},
+		{ENUM_MAP_N(T_XmlSerialize)},
+		{ENUM_MAP_N(T_WithClause)},
+		{ENUM_MAP_N(T_CommonTableExpr)},
+
+		/*
+		 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)
+		 */
+		{ENUM_MAP_N(T_IdentifySystemCmd)},
+		{ENUM_MAP_N(T_BaseBackupCmd)},
+		{ENUM_MAP_N(T_StartReplicationCmd)},
+		{ENUM_MAP_N(T_TimeLineHistoryCmd)},
+
+		/*
+		 * TAGS FOR RANDOM OTHER STUFF
+		 *
+		 * These are objects that aren't part of parse/plan/execute node tree
+		 * structures)}, but we give them NodeTags anyway for identification
+		 * purposes (usually because they are involved in APIs where we want to
+		 * pass multiple object types through the same pointer).
+		 */
+		{ENUM_MAP_N(T_TriggerData)},		/* in commands/trigger.h */
+		{ENUM_MAP_N(T_EventTriggerData)},			/* in commands/even{TAG_STR(T_trigger.h */
+		{ENUM_MAP_N(T_ReturnSetInfo)},			/* in nodes/execnodes.h */
+		{ENUM_MAP_N(T_WindowObjectData)},			/* private in nodeWindowAgg.c */
+		{ENUM_MAP_N(T_TIDBitmap)},				/* in nodes/tidbitmap.h */
+		{ENUM_MAP_N(T_InlineCodeBlock)},			/* in nodes/parsenodes.h */
+		{ENUM_MAP_N(T_FdwRoutine)},				/* in foreign/fdwapi.h */
+		{0,"",NULL}
+	};
+
+static DebugNode*
+getNode(DebugGraph *graph, PlannerInfo *root, Node *node)
+{
+	DebugNode *n = NULL;
+
+	Assert(graph);
+	Assert(root && IsA(root, PlannerInfo));
+
+	if (node)
+	{
+		const NodeTagMapType *i;
+		for (i = nodetag_maps; i->tag != node->type && i->name[0] != '\0'; i++);
+
+		n = newDebugNodeByPointer(graph, node, i->name);
+		Assert(n);
+		if (!n->create_node_again)
+		{
+			WRITE_CUSTOM_FIELD("address", "%p", node);
+			WRITE_CUSTOM_FIELD("type", "%s", getNodeTagName(node->type));
+			if (i->setNode)
+				i->setNode(graph, n, root, node);
+		}
+	}
+
+	return n;
+}
+
+const char*
+getNodeTagName(NodeTag tag)
+{
+	const NodeTagMapType *i;
+	for (i = nodetag_maps; i->tag != tag && i->name[0] != '\0'; i++);
+	return i->name;
+}
+
+/* ************************** enum JoinType ******************************* */
+
+typedef struct JoinTypeMapType
+{
+	JoinType type;
+	const char *name;
+} JoinTypeMapType;
+
+#define ENUM_MAP(name) name, CppAsString(name)
+
+const char*
+getJoinTypeName(JoinType t)
+{
+	const JoinTypeMapType types[] = {
+			{ENUM_MAP(JOIN_INNER)},					/* matching tuple pairs only */
+			{ENUM_MAP(JOIN_LEFT)},					/* pairs + unmatched LHS tuples */
+			{ENUM_MAP(JOIN_FULL)},					/* pairs + unmatched LHS + unmatched RHS */
+			{ENUM_MAP(JOIN_RIGHT)},					/* pairs + unmatched RHS tuples */
+
+		/*
+		 * Semijoins and anti-semijoins (as defined in relational theory) do not
+		 * appear in the SQL JOIN syntax, but there are standard idioms for
+		 * representing them (e.g., using EXISTS).	The planner recognizes these
+		 * cases and converts them to joins.  So the planner and executor must
+		 * support these codes.  NOTE: in JOIN_SEMI output, it is unspecified
+		 * which matching RHS row is joined to.  In JOIN_ANTI output, the row is
+		 * guaranteed to be null-extended.
+		 */
+			{ENUM_MAP(JOIN_SEMI)},					/* 1 copy of each LHS row that has match(es) */
+			{ENUM_MAP(JOIN_ANTI)},					/* 1 copy of each LHS row that has no match */
+
+		/*
+		 * These codes are used internally in the planner, but are not supported
+		 * by the executor (nor, indeed, by most of the planner).
+		 */
+			{ENUM_MAP(JOIN_UNIQUE_OUTER)},			/* LHS path must be made unique */
+			{ENUM_MAP(JOIN_UNIQUE_INNER)},			/* RHS path must be made unique */
+			{0,""}
+	};
+	const JoinTypeMapType *i;
+	for (i=types; i->type != t && i->name[0] != '\0'; i++);
+	return i->name;
+}
+
+/* ******************************* UTILS ************************************ */
 
 static const char*
 get_relation_name(PlannerInfo *root, int relid)
@@ -288,11 +941,11 @@ get_relation_name(PlannerInfo *root, int relid)
 }
 
 static void
-add_relids(DebugNode *node, const char *name, PlannerInfo *root, Relids relids)
+addRelids(DebugNode *n, const char *name, PlannerInfo *root, Relids relids)
 {
 	if (!relids)
 	{
-		addDebugNodeAttribute(node, name, "NULL");
+		addDebugNodeAttribute(n, name, "NULL");
 	}
 	else
 	{
@@ -312,350 +965,55 @@ add_relids(DebugNode *node, const char *name, PlannerInfo *root, Relids relids)
 
 			relname = get_relation_name(root, x);
 
-			addDebugNodeAttribute(node, str.data, relname);
+			addDebugNodeAttribute(n, str.data, relname);
 		}
 		bms_free(tmprelids);
 		pfree(str.data);
 	}
 }
 
-static DebugNode*
-get_tablespace(DebugGraph *graph, Oid tablespace)
+static double
+get_loop_count(PlannerInfo *root, Relids outer_relids)
 {
-	DebugNode *node;
-	Assert(graph);
-	Assert(tablespace >= 0);
+	double		result = 1.0;
 
+	/* For a non-parameterized path, just return 1.0 quickly */
+	if (outer_relids != NULL)
 	{
-		StringInfoData str;
-		initStringInfo(&str);
+		int			relid;
 
-		appendStringInfo(&str, "tablespace_%u", tablespace);
-		node = newDebugNode(graph, str.data, "TableSpace");
-		Assert(node);
-
-		pfree(str.data);
-	}
-
-	if (!node->create_node_again)
-	{
-		addDebugNodeAttributeArgs(node, "oid", "%u", tablespace);
-		addDebugNodeAttributeArgs(node, "name", "%s",
-				get_tablespace_name(tablespace));
+		/* Need a working copy since bms_first_member is destructive */
+		outer_relids = bms_copy(outer_relids);
+		while ((relid = bms_first_member(outer_relids)) >= 0)
 		{
-			Cost c_rand, c_seq;
-			get_tablespace_page_costs(tablespace, &c_rand, &c_seq);
-			addDebugNodeAttributeArgs(node, "seq_page_cost", "%lf", c_seq);
-			addDebugNodeAttributeArgs(node, "random_page_cost", "%lf", c_rand);
+			RelOptInfo *outer_rel;
+
+			/* Paranoia: ignore bogus relid indexes */
+			if (relid >= root->simple_rel_array_size)
+				continue;
+			outer_rel = root->simple_rel_array[relid];
+			if (outer_rel == NULL)
+				continue;
+			Assert(outer_rel->relid == relid);	/* sanity check on array */
+
+			/* Other relation could be proven empty, if so ignore */
+			if (IS_DUMMY_REL(outer_rel))
+				continue;
+
+			/* Otherwise, rel's rows estimate should be valid by now */
+			Assert(outer_rel->rows > 0);
+
+			/* Remember smallest row count estimate among the outer rels */
+			if (result == 1.0 || result > outer_rel->rows)
+				result = outer_rel->rows;
 		}
+		bms_free(outer_relids);
 	}
-
-	return node;
-}
-
-static DebugNode*
-get_restrictclauses(DebugGraph *graph, PlannerInfo *root, List *clauses)
-{
-	DebugNode *node;
-	ListCell   *l;
-
-	if (!clauses)
-		return NULL;
-
-	node = newDebugNodeByPointer(graph, clauses, "List");
-	Assert(node);
-
-	if (node->create_node_again)
-		return node;
-
-	addDebugNodeAttributeArgs(node, "type", "%d", clauses->type);
-	addDebugNodeAttributeArgs(node, "type_name", "%s",
-			get_tag_name(clauses->type));
-
-	foreach(l, clauses)
-	{
-		RestrictInfo *c = lfirst(l);
-		DebugNode    *node_c;
-		const char  *aux;
-
-		Assert(IsA(c, RestrictInfo));
-
-		node_c = newDebugNodeByPointer(graph, c, "RestrictInfo");
-		Assert(node_c);
-		addDebugNodeAttributeArgs(node_c, "type", "%d", c->type);
-		addDebugNodeAttributeArgs(node_c, "type_name", "%s",
-				get_tag_name(c->type));
-		newDebugEdgeByName(graph, node->internal_name, node_c->internal_name,
-				"");
-
-		if (node_c->create_node_again)
-			continue;
-
-		aux = get_expr((Node *) c->clause, root->parse->rtable);
-		addDebugNodeAttribute(node_c, "clause", aux);
-		pfree((void*)aux);
-		aux = get_expr((Node *) c->orclause, root->parse->rtable);
-		addDebugNodeAttribute(node_c, "orclause", aux);
-		pfree((void*)aux);
-
-		addDebugNodeAttributeArgs(node_c, "is_pushed_down", "%s",
-				booltostr(c->is_pushed_down));
-		addDebugNodeAttributeArgs(node_c, "outerjoin_delayed", "%s",
-				booltostr(c->outerjoin_delayed));
-		addDebugNodeAttributeArgs(node_c, "can_join", "%s",
-				booltostr(c->can_join));
-		addDebugNodeAttributeArgs(node_c, "pseudoconstant", "%s",
-				booltostr(c->pseudoconstant));
-		addDebugNodeAttributeArgs(node_c, "eval_cost.startup", "%lf",
-				c->eval_cost.startup);
-		addDebugNodeAttributeArgs(node_c, "eval_cost.per_tuple", "%lf",
-				c->eval_cost.per_tuple);
-		addDebugNodeAttributeArgs(node_c, "norm_selec", "%lf", c->norm_selec);
-		addDebugNodeAttributeArgs(node_c, "outer_selec", "%lf",
-				c->outer_selec);
-
-	}
-
-	return node;
-}
-
-static DebugNode* get_parampathinfo(DebugGraph *graph, PlannerInfo *root,
-		ParamPathInfo *param_info);
-static DebugNode* get_indexoptinfo(DebugGraph *graph, PlannerInfo *root,
-		IndexPath *path, IndexOptInfo *index_info);
-static double get_loop_count(PlannerInfo *root, Relids outer_relids);
-const char* get_jointype_name(JoinType t);
-
-static DebugNode*
-get_path(DebugGraph *graph, PlannerInfo *root, Path *path)
-{
-	DebugNode   *node;
-	const char *ptype;
-	bool         join = false;
-	Path        *subpath = NULL;
-	double      loops = 1.0;
-
-	if (!path)
-		return NULL;
-
-	node = newDebugNodeByPointer(graph, path, "");
-	Assert(node);
-	if (node->create_node_again)
-		return node;
-
-	addDebugNodeAttributeArgs(node, "address", "%p", path);
-	addDebugNodeAttributeArgs(node, "type", "%d", path->type);
-	addDebugNodeAttributeArgs(node, "type_name", "%s",
-			get_tag_name(path->type));
-	addDebugNodeAttributeArgs(node, "pathtype", "%d", path->pathtype);
-	addDebugNodeAttributeArgs(node, "pathtype_name", "%s",
-			get_tag_name(path->pathtype));
-
-	newDebugEdgeByNode(graph, node, get_reloptinfo(graph, root, path->parent),
-			"parent");
-
-	newDebugEdgeByNode(graph, node,
-			get_parampathinfo(graph, root, path->param_info), "param_info");
-	if (path->param_info)
-		loops = get_loop_count(root, path->param_info->ppi_req_outer);
-	addDebugNodeAttributeArgs(node, "loops", "%lf", loops);
-
-	addDebugNodeAttributeArgs(node, "startup_cost", "%lf",
-			path->startup_cost);
-	addDebugNodeAttributeArgs(node, "total_cost", "%lf", path->total_cost);
-	addDebugNodeAttributeArgs(node, "rows", "%lf", path->rows);
-
-	{
-		const char *aux = get_pathkeys(path->pathkeys, root->parse->rtable);
-		addDebugNodeAttribute(node, "pathkeys", aux);
-		pfree((void*)aux);
-	}
-
-	switch (nodeTag(path))
-	{
-		case T_Path:
-			ptype = "SeqScan";
-			break;
-		case T_IndexPath:
-			ptype = "IdxScan";
-			{
-				IndexPath *idxpath = (IndexPath*)path;
-				Cost indexStartupCost=0, indexTotalCost=0, indexSelectivity=0,
-				     indexCorrelation=0;
-				addDebugNodeAttributeArgs(node, "indexonly", "%s",
-						booltostr(idxpath->path.pathtype == T_IndexOnlyScan));
-				newDebugEdgeByNode(graph, node,
-						get_indexoptinfo(graph, root, idxpath,
-								idxpath->indexinfo),
-						"indexinfo");
-				newDebugEdgeByNode(graph, node,
-						get_restrictclauses(graph, root, idxpath->indexclauses),
-						"indexclauses");
-				newDebugEdgeByNode(graph, node,
-						get_restrictclauses(graph, root, idxpath->indexquals),
-						"indexquals");
-				newDebugEdgeByNode(graph, node,
-						get_restrictclauses(graph, root, idxpath->indexorderbys),
-						"indexorderbys");
-				addDebugNodeAttributeArgs(node, "indexscandir", "%d",
-						idxpath->indexscandir);
-				if (idxpath->indexinfo)
-					OidFunctionCall7(idxpath->indexinfo->amcostestimate,
-									 PointerGetDatum(root),
-									 PointerGetDatum(path),
-									 Float8GetDatum(loops),
-									 PointerGetDatum(&indexStartupCost),
-									 PointerGetDatum(&indexTotalCost),
-									 PointerGetDatum(&indexSelectivity),
-									 PointerGetDatum(&indexCorrelation));
-				addDebugNodeAttributeArgs(node, "indexstartupcost", "%lf",
-						indexStartupCost);
-				addDebugNodeAttributeArgs(node, "indextotalcost", "%lf",
-						idxpath->indextotalcost);
-				addDebugNodeAttributeArgs(node, "indexselectivity", "%le",
-						idxpath->indexselectivity);
-				addDebugNodeAttributeArgs(node, "indexcorrelation", "%le",
-						indexCorrelation);
-			}
-			break;
-		case T_BitmapHeapPath:
-			ptype = "BitmapHeapScan";
-			break;
-		case T_BitmapAndPath:
-			ptype = "BitmapAndPath";
-			break;
-		case T_BitmapOrPath:
-			ptype = "BitmapOrPath";
-			break;
-		case T_TidPath:
-			ptype = "TidScan";
-			break;
-		case T_ForeignPath:
-			ptype = "ForeignScan";
-			break;
-		case T_AppendPath:
-			ptype = "Append";
-			break;
-		case T_MergeAppendPath:
-			ptype = "MergeAppend";
-			{
-				MergePath  *mp = (MergePath *) path;
-				addDebugNodeAttributeArgs(node, "outersortkeys", "%d",
-						((mp->outersortkeys) ? 1 : 0));
-				addDebugNodeAttributeArgs(node, "innersortkeys", "%d",
-						((mp->innersortkeys) ? 1 : 0));
-				addDebugNodeAttributeArgs(node, "materialize_inner", "%d",
-						((mp->materialize_inner) ? 1 : 0));
-			}
-			break;
-		case T_ResultPath:
-			ptype = "Result";
-			break;
-		case T_MaterialPath:
-			ptype = "Material";
-			subpath = ((MaterialPath *) path)->subpath;
-			break;
-		case T_UniquePath:
-			ptype = "Unique";
-			subpath = ((UniquePath *) path)->subpath;
-			break;
-		case T_NestPath:
-			ptype = "NestLoop";
-			join = true;
-			break;
-		case T_MergePath:
-			ptype = "MergeJoin";
-			join = true;
-			break;
-		case T_HashPath:
-			ptype = "HashJoin";
-			join = true;
-			break;
-		default:
-			ptype = "???Path";
-			break;
-	}
-
-	renameDebugNode(node, ptype);
-
-	if (join)
-	{
-		JoinPath   *jp = (JoinPath *) path;
-
-		addDebugNodeAttributeArgs(node, "jointype", "%d", jp->jointype);
-		addDebugNodeAttributeArgs(node, "jointype_name", "%s",
-				get_jointype_name(jp->jointype));
-
-		newDebugEdgeByNode(graph, node,
-				get_restrictclauses(graph, root, jp->joinrestrictinfo),
-				"joinrestrictinfo");
-
-		newDebugEdgeByNode(graph, node,
-				get_path(graph, root, jp->outerjoinpath),
-				"outerjoinpath");
-		newDebugEdgeByNode(graph, node,
-				get_path(graph, root, jp->innerjoinpath),
-				"innerjoinpath");
-	}
-
-	if (subpath)
-		newDebugEdgeByNode(graph, node,
-				get_path(graph, root, subpath), "subpath");
-
-	return node;
-}
-
-static const char *
-get_pathkeys(const List *pathkeys, const List *rtable)
-{
-	StringInfoData str;
-	const ListCell *i;
-
-	initStringInfo(&str);
-
-	if (pathkeys)
-	{
-		appendStringInfo(&str, "(");
-		foreach(i, pathkeys)
-		{
-			PathKey    *pathkey = (PathKey *) lfirst(i);
-			EquivalenceClass *eclass;
-			ListCell   *k;
-			bool		first = true;
-
-			eclass = pathkey->pk_eclass;
-			/* chase up, in case pathkey is non-canonical */
-			while (eclass->ec_merged)
-				eclass = eclass->ec_merged;
-
-			appendStringInfo(&str, "(");
-			foreach(k, eclass->ec_members)
-			{
-				const char *aux;
-				EquivalenceMember *mem = (EquivalenceMember *) lfirst(k);
-
-				if (first)
-					first = false;
-				else
-					appendStringInfo(&str, ", ");
-				aux = get_expr((Node *) mem->em_expr, rtable);
-				appendStringInfo(&str, "%s", aux);
-				pfree((void*)aux);
-			}
-			appendStringInfo(&str, ")");
-			if (lnext(i))
-				appendStringInfo(&str, ", ");
-		}
-		appendStringInfo(&str, ")");
-	}
-	else
-		appendStringInfoString(&str, "NULL");
-
-	return str.data; /*return (const char*) must be pfree'd*/
+	return result;
 }
 
 static const char*
-get_expr(const Node *expr, const List *rtable)
+getExpr(const Node *expr, const List *rtable)
 {
 	StringInfoData str;
 
@@ -730,14 +1088,14 @@ get_expr(const Node *expr, const List *rtable)
 		if (list_length(e->args) > 1)
 		{
 			const char *aux;
-			aux = get_expr(get_leftop((const Expr *) e), rtable);
+			aux = getExpr(get_leftop((const Expr *) e), rtable);
 			appendStringInfo(&str, "%s", aux);
 			pfree((void*)aux);
 
 			appendStringInfo(&str, " %s ",
 					((opname != NULL) ? opname : "(invalid operator)"));
 
-			aux = get_expr(get_rightop((const Expr *) e), rtable);
+			aux = getExpr(get_rightop((const Expr *) e), rtable);
 			appendStringInfo(&str, "%s", aux);
 			pfree((void*)aux);
 		}
@@ -747,7 +1105,7 @@ get_expr(const Node *expr, const List *rtable)
 			/* we print prefix and postfix ops the same... */
 			appendStringInfo(&str, "%s ",
 					((opname != NULL) ? opname : "(invalid operator)"));
-			aux = get_expr(get_leftop((const Expr *) e), rtable);
+			aux = getExpr(get_leftop((const Expr *) e), rtable);
 			appendStringInfo(&str, "%s", aux);
 			pfree((void*)aux);
 		}
@@ -763,7 +1121,7 @@ get_expr(const Node *expr, const List *rtable)
 				((funcname != NULL) ? funcname : "(invalid function)"));
 		foreach(l, e->args)
 		{
-			const char *aux = get_expr(lfirst(l), rtable);
+			const char *aux = getExpr(lfirst(l), rtable);
 			appendStringInfo(&str, "%s", aux);
 			pfree((void*)aux);
 
@@ -778,587 +1136,81 @@ get_expr(const Node *expr, const List *rtable)
 	return str.data; /*return (const char*) must be pfree'd*/
 }
 
-static DebugNode*
-get_parampathinfo(DebugGraph *graph, PlannerInfo *root,
-		ParamPathInfo *param_info)
+static const char *
+getPathkeys(const List *pathkeys, const List *rtable)
 {
-	DebugNode *node;
+	StringInfoData str;
+	const ListCell *i;
 
-	Assert(graph && root);
+	initStringInfo(&str);
 
-	if (!param_info)
-		return NULL;
-
-	Assert(IsA(param_info, ParamPathInfo));
-	node = newDebugNodeByPointer(graph, param_info, "ParamPathInfo");
-	Assert(node);
-
-	addDebugNodeAttributeArgs(node, "type", "%d", param_info->type);
-	addDebugNodeAttributeArgs(node, "type_name", "%s",
-			get_tag_name(param_info->type));
-	add_relids(node, "ppi_req_outer", root, param_info->ppi_req_outer);
-	addDebugNodeAttributeArgs(node, "ppi_rows", "%lf", param_info->ppi_rows);
-
-	newDebugEdgeByNode(graph, node,
-			get_restrictclauses(graph, root, param_info->ppi_clauses),
-			"ppi_clauses");
-
-	return node;
-}
-
-static DebugNode*
-get_indexoptinfo(DebugGraph *graph, PlannerInfo *root,
-		IndexPath *path, IndexOptInfo *index_info)
-{
-	DebugNode *node;
-
-	Assert(graph && root);
-
-	if (!index_info)
-		return NULL;
-
-	Assert(IsA(index_info, IndexOptInfo));
-	node = newDebugNodeByPointer(graph, (void*)index_info, "IndexOptInfo");
-	Assert(node);
-
-	addDebugNodeAttributeArgs(node, "type", "%d", index_info->type);
-	addDebugNodeAttributeArgs(node, "type_name", "%s",
-			get_tag_name(index_info->type));
-
-	/* NB: this isn't a complete set of fields */
-	//WRITE_OID_FIELD(indexoid);
-
-	newDebugEdgeByNode(graph, node,
-			get_reloptinfo(graph, root, index_info->rel), "rel");
-
-	addDebugNodeAttributeArgs(node, "indexoid", "%u", index_info->indexoid);
-	//addDebugNodeAttributeArgs(node, "reltablespace", "%u", index_info->reltablespace);
-	newDebugEdgeByNode(graph, node,
-			get_tablespace(graph, index_info->reltablespace), "reltablespace");
-	addDebugNodeAttributeArgs(node, "pages", "%u", index_info->pages);
-	addDebugNodeAttributeArgs(node, "tuples", "%lf", index_info->tuples);
-
-	addDebugNodeAttributeArgs(node, "tree_height", "%d", index_info->tree_height);
-	addDebugNodeAttributeArgs(node, "ncolumns", "%d", index_info->ncolumns);
-	addDebugNodeAttributeArgs(node, "relam", "%u", index_info->relam);
-	addDebugNodeAttributeArgs(node, "amcostestimate", "%u", index_info->amcostestimate);
-
-	//List	   *indpred;		/* predicate if a partial index, else NIL */
-	//List	   *indextlist;		/* targetlist representing index columns */
-
-	addDebugNodeAttributeArgs(node, "reverse_sort", "%s",
-			booltostr(index_info->reverse_sort));
-	addDebugNodeAttributeArgs(node, "nulls_first", "%s",
-			booltostr(index_info->nulls_first));
-	addDebugNodeAttributeArgs(node, "predOK", "%s",
-			booltostr(index_info->predOK));
-	addDebugNodeAttributeArgs(node, "unique", "%s",
-			booltostr(index_info->unique));
-	addDebugNodeAttributeArgs(node, "immediate", "%s",
-			booltostr(index_info->immediate));
-	addDebugNodeAttributeArgs(node, "hypothetical", "%s",
-			booltostr(index_info->hypothetical));
-	addDebugNodeAttributeArgs(node, "canreturn", "%s",
-			booltostr(index_info->canreturn));
-
-	return node;
-}
-
-static double
-get_loop_count(PlannerInfo *root, Relids outer_relids)
-{
-	double		result = 1.0;
-
-	/* For a non-parameterized path, just return 1.0 quickly */
-	if (outer_relids != NULL)
+	if (pathkeys)
 	{
-		int			relid;
-
-		/* Need a working copy since bms_first_member is destructive */
-		outer_relids = bms_copy(outer_relids);
-		while ((relid = bms_first_member(outer_relids)) >= 0)
+		appendStringInfo(&str, "(");
+		foreach(i, pathkeys)
 		{
-			RelOptInfo *outer_rel;
+			PathKey    *pathkey = (PathKey *) lfirst(i);
+			EquivalenceClass *eclass;
+			ListCell   *k;
+			bool		first = true;
 
-			/* Paranoia: ignore bogus relid indexes */
-			if (relid >= root->simple_rel_array_size)
-				continue;
-			outer_rel = root->simple_rel_array[relid];
-			if (outer_rel == NULL)
-				continue;
-			Assert(outer_rel->relid == relid);	/* sanity check on array */
+			eclass = pathkey->pk_eclass;
+			/* chase up, in case pathkey is non-canonical */
+			while (eclass->ec_merged)
+				eclass = eclass->ec_merged;
 
-			/* Other relation could be proven empty, if so ignore */
-			if (IS_DUMMY_REL(outer_rel))
-				continue;
+			appendStringInfo(&str, "(");
+			foreach(k, eclass->ec_members)
+			{
+				const char *aux;
+				EquivalenceMember *mem = (EquivalenceMember *) lfirst(k);
 
-			/* Otherwise, rel's rows estimate should be valid by now */
-			Assert(outer_rel->rows > 0);
-
-			/* Remember smallest row count estimate among the outer rels */
-			if (result == 1.0 || result > outer_rel->rows)
-				result = outer_rel->rows;
+				if (first)
+					first = false;
+				else
+					appendStringInfo(&str, ", ");
+				aux = getExpr((Node *) mem->em_expr, rtable);
+				appendStringInfo(&str, "%s", aux);
+				pfree((void*)aux);
+			}
+			appendStringInfo(&str, ")");
+			if (lnext(i))
+				appendStringInfo(&str, ", ");
 		}
-		bms_free(outer_relids);
+		appendStringInfo(&str, ")");
 	}
-	return result;
+	else
+		appendStringInfoString(&str, "NULL");
+
+	return str.data; /*return (const char*) must be pfree'd*/
 }
 
-#define ENUM_STR(name) name, CppAsString(name)
-
-typedef struct NodeTagNameMapType
+static DebugNode*
+getTablespace(DebugGraph *graph, Oid tablespace)
 {
-	NodeTag      tag;
-	const char *name;
-} NodeTagNameMapType;
+	DebugNode *n;
+	Assert(graph);
+	Assert(tablespace >= 0);
 
-static const char*
-get_tag_name(NodeTag tag)
-{
-	const NodeTagNameMapType tags[] = {
-			{ENUM_STR(T_Invalid)},
+	{StringInfoData str;
+	initStringInfo(&str);
+	appendStringInfo(&str, "tablespace_%u", tablespace);
+	n = newDebugNode(graph, str.data, "TableSpace");
+	Assert(n);
+		pfree(str.data);}
 
-			/*
-			 * TAGS FOR EXECUTOR NODES (execnodes.h)
-			 */
-			{ENUM_STR(T_IndexInfo)},
-			{ENUM_STR(T_ExprContext)},
-			{ENUM_STR(T_ProjectionInfo)},
-			{ENUM_STR(T_JunkFilter)},
-			{ENUM_STR(T_ResultRelInfo)},
-			{ENUM_STR(T_EState)},
-			{ENUM_STR(T_TupleTableSlot)},
+	if (!n->create_node_again)
+	{
+		addDebugNodeAttributeArgs(n, "oid", "%u", tablespace);
+		addDebugNodeAttributeArgs(n, "name", "%s",
+				get_tablespace_name(tablespace));
+		{
+			Cost c_rand, c_seq;
+			get_tablespace_page_costs(tablespace, &c_rand, &c_seq);
+			addDebugNodeAttributeArgs(n, "seq_page_cost", "%lf", c_seq);
+			addDebugNodeAttributeArgs(n, "random_page_cost", "%lf", c_rand);
+		}
+	}
 
-			/*
-			 * TAGS FOR PLAN NODES (plannodes.h)
-			 */
-			{ENUM_STR(T_Plan)},
-			{ENUM_STR(T_Result)},
-			{ENUM_STR(T_ModifyTable)},
-			{ENUM_STR(T_Append)},
-			{ENUM_STR(T_MergeAppend)},
-			{ENUM_STR(T_RecursiveUnion)},
-			{ENUM_STR(T_BitmapAnd)},
-			{ENUM_STR(T_BitmapOr)},
-			{ENUM_STR(T_Scan)},
-			{ENUM_STR(T_SeqScan)},
-			{ENUM_STR(T_IndexScan)},
-			{ENUM_STR(T_IndexOnlyScan)},
-			{ENUM_STR(T_BitmapIndexScan)},
-			{ENUM_STR(T_BitmapHeapScan)},
-			{ENUM_STR(T_TidScan)},
-			{ENUM_STR(T_SubqueryScan)},
-			{ENUM_STR(T_FunctionScan)},
-			{ENUM_STR(T_ValuesScan)},
-			{ENUM_STR(T_CteScan)},
-			{ENUM_STR(T_WorkTableScan)},
-			{ENUM_STR(T_ForeignScan)},
-			{ENUM_STR(T_Join)},
-			{ENUM_STR(T_NestLoop)},
-			{ENUM_STR(T_MergeJoin)},
-			{ENUM_STR(T_HashJoin)},
-			{ENUM_STR(T_Material)},
-			{ENUM_STR(T_Sort)},
-			{ENUM_STR(T_Group)},
-			{ENUM_STR(T_Agg)},
-			{ENUM_STR(T_WindowAgg)},
-			{ENUM_STR(T_Unique)},
-			{ENUM_STR(T_Hash)},
-			{ENUM_STR(T_SetOp)},
-			{ENUM_STR(T_LockRows)},
-			{ENUM_STR(T_Limit)},
-			/* these aren't subclasses of Plan: */
-			{ENUM_STR(T_NestLoopParam)},
-			{ENUM_STR(T_PlanRowMark)},
-			{ENUM_STR(T_PlanInvalItem)},
-
-			/*
-			 * TAGS FOR PLAN STATE NODES (execnodes.h)
-			 *
-			 * These should correspond one-to-one with Plan node types.
-			 */
-			{ENUM_STR(T_PlanState)},
-			{ENUM_STR(T_ResultState)},
-			{ENUM_STR(T_ModifyTableState)},
-			{ENUM_STR(T_AppendState)},
-			{ENUM_STR(T_MergeAppendState)},
-			{ENUM_STR(T_RecursiveUnionState)},
-			{ENUM_STR(T_BitmapAndState)},
-			{ENUM_STR(T_BitmapOrState)},
-			{ENUM_STR(T_ScanState)},
-			{ENUM_STR(T_SeqScanState)},
-			{ENUM_STR(T_IndexScanState)},
-			{ENUM_STR(T_IndexOnlyScanState)},
-			{ENUM_STR(T_BitmapIndexScanState)},
-			{ENUM_STR(T_BitmapHeapScanState)},
-			{ENUM_STR(T_TidScanState)},
-			{ENUM_STR(T_SubqueryScanState)},
-			{ENUM_STR(T_FunctionScanState)},
-			{ENUM_STR(T_ValuesScanState)},
-			{ENUM_STR(T_CteScanState)},
-			{ENUM_STR(T_WorkTableScanState)},
-			{ENUM_STR(T_ForeignScanState)},
-			{ENUM_STR(T_JoinState)},
-			{ENUM_STR(T_NestLoopState)},
-			{ENUM_STR(T_MergeJoinState)},
-			{ENUM_STR(T_HashJoinState)},
-			{ENUM_STR(T_MaterialState)},
-			{ENUM_STR(T_SortState)},
-			{ENUM_STR(T_GroupState)},
-			{ENUM_STR(T_AggState)},
-			{ENUM_STR(T_WindowAggState)},
-			{ENUM_STR(T_UniqueState)},
-			{ENUM_STR(T_HashState)},
-			{ENUM_STR(T_SetOpState)},
-			{ENUM_STR(T_LockRowsState)},
-			{ENUM_STR(T_LimitState)},
-
-			/*
-			 * TAGS FOR PRIMITIVE NODES (primnodes.h)
-			 */
-			{ENUM_STR(T_Alias)},
-			{ENUM_STR(T_RangeVar)},
-			{ENUM_STR(T_Expr)},
-			{ENUM_STR(T_Var)},
-			{ENUM_STR(T_Const)},
-			{ENUM_STR(T_Param)},
-			{ENUM_STR(T_Aggref)},
-			{ENUM_STR(T_WindowFunc)},
-			{ENUM_STR(T_ArrayRef)},
-			{ENUM_STR(T_FuncExpr)},
-			{ENUM_STR(T_NamedArgExpr)},
-			{ENUM_STR(T_OpExpr)},
-			{ENUM_STR(T_DistinctExpr)},
-			{ENUM_STR(T_NullIfExpr)},
-			{ENUM_STR(T_ScalarArrayOpExpr)},
-			{ENUM_STR(T_BoolExpr)},
-			{ENUM_STR(T_SubLink)},
-			{ENUM_STR(T_SubPlan)},
-			{ENUM_STR(T_AlternativeSubPlan)},
-			{ENUM_STR(T_FieldSelect)},
-			{ENUM_STR(T_FieldStore)},
-			{ENUM_STR(T_RelabelType)},
-			{ENUM_STR(T_CoerceViaIO)},
-			{ENUM_STR(T_ArrayCoerceExpr)},
-			{ENUM_STR(T_ConvertRowtypeExpr)},
-			{ENUM_STR(T_CollateExpr)},
-			{ENUM_STR(T_CaseExpr)},
-			{ENUM_STR(T_CaseWhen)},
-			{ENUM_STR(T_CaseTestExpr)},
-			{ENUM_STR(T_ArrayExpr)},
-			{ENUM_STR(T_RowExpr)},
-			{ENUM_STR(T_RowCompareExpr)},
-			{ENUM_STR(T_CoalesceExpr)},
-			{ENUM_STR(T_MinMaxExpr)},
-			{ENUM_STR(T_XmlExpr)},
-			{ENUM_STR(T_NullTest)},
-			{ENUM_STR(T_BooleanTest)},
-			{ENUM_STR(T_CoerceToDomain)},
-			{ENUM_STR(T_CoerceToDomainValue)},
-			{ENUM_STR(T_SetToDefault)},
-			{ENUM_STR(T_CurrentOfExpr)},
-			{ENUM_STR(T_TargetEntry)},
-			{ENUM_STR(T_RangeTblRef)},
-			{ENUM_STR(T_JoinExpr)},
-			{ENUM_STR(T_FromExpr)},
-			{ENUM_STR(T_IntoClause)},
-
-			/*
-			 * TAGS FOR EXPRESSION STATE NODES (execnodes.h)
-			 *
-			 * These correspond (not always one-for-one) to primitive nodes derived
-			 * from Expr.
-			 */
-			{ENUM_STR(T_ExprState)},
-			{ENUM_STR(T_GenericExprState)},
-			{ENUM_STR(T_WholeRowVarExprState)},
-			{ENUM_STR(T_AggrefExprState)},
-			{ENUM_STR(T_WindowFuncExprState)},
-			{ENUM_STR(T_ArrayRefExprState)},
-			{ENUM_STR(T_FuncExprState)},
-			{ENUM_STR(T_ScalarArrayOpExprState)},
-			{ENUM_STR(T_BoolExprState)},
-			{ENUM_STR(T_SubPlanState)},
-			{ENUM_STR(T_AlternativeSubPlanState)},
-			{ENUM_STR(T_FieldSelectState)},
-			{ENUM_STR(T_FieldStoreState)},
-			{ENUM_STR(T_CoerceViaIOState)},
-			{ENUM_STR(T_ArrayCoerceExprState)},
-			{ENUM_STR(T_ConvertRowtypeExprState)},
-			{ENUM_STR(T_CaseExprState)},
-			{ENUM_STR(T_CaseWhenState)},
-			{ENUM_STR(T_ArrayExprState)},
-			{ENUM_STR(T_RowExprState)},
-			{ENUM_STR(T_RowCompareExprState)},
-			{ENUM_STR(T_CoalesceExprState)},
-			{ENUM_STR(T_MinMaxExprState)},
-			{ENUM_STR(T_XmlExprState)},
-			{ENUM_STR(T_NullTestState)},
-			{ENUM_STR(T_CoerceToDomainState)},
-			{ENUM_STR(T_DomainConstraintState)},
-
-			/*
-			 * TAGS FOR PLANNER NODES (relation.h)
-			 */
-			{ENUM_STR(T_PlannerInfo)},
-			{ENUM_STR(T_PlannerGlobal)},
-			{ENUM_STR(T_RelOptInfo)},
-			{ENUM_STR(T_IndexOptInfo)},
-			{ENUM_STR(T_ParamPathInfo)},
-			{ENUM_STR(T_Path)},
-			{ENUM_STR(T_IndexPath)},
-			{ENUM_STR(T_BitmapHeapPath)},
-			{ENUM_STR(T_BitmapAndPath)},
-			{ENUM_STR(T_BitmapOrPath)},
-			{ENUM_STR(T_NestPath)},
-			{ENUM_STR(T_MergePath)},
-			{ENUM_STR(T_HashPath)},
-			{ENUM_STR(T_TidPath)},
-			{ENUM_STR(T_ForeignPath)},
-			{ENUM_STR(T_AppendPath)},
-			{ENUM_STR(T_MergeAppendPath)},
-			{ENUM_STR(T_ResultPath)},
-			{ENUM_STR(T_MaterialPath)},
-			{ENUM_STR(T_UniquePath)},
-			{ENUM_STR(T_EquivalenceClass)},
-			{ENUM_STR(T_EquivalenceMember)},
-			{ENUM_STR(T_PathKey)},
-			{ENUM_STR(T_RestrictInfo)},
-			{ENUM_STR(T_PlaceHolderVar)},
-			{ENUM_STR(T_SpecialJoinInfo)},
-			{ENUM_STR(T_LateralJoinInfo)},
-			{ENUM_STR(T_AppendRelInfo)},
-			{ENUM_STR(T_PlaceHolderInfo)},
-			{ENUM_STR(T_MinMaxAggInfo)},
-			{ENUM_STR(T_PlannerParamItem)},
-
-			/*
-			 * TAGS FOR MEMORY NODES (memnodes.h)
-			 */
-			{ENUM_STR(T_MemoryContext)},
-			{ENUM_STR(T_AllocSetContext)},
-
-			/*
-			 * TAGS FOR VALUE NODES (value.h)
-			 */
-			{ENUM_STR(T_Value)},
-			{ENUM_STR(T_Integer)},
-			{ENUM_STR(T_Float)},
-			{ENUM_STR(T_String)},
-			{ENUM_STR(T_BitString)},
-			{ENUM_STR(T_Null)},
-
-			/*
-			 * TAGS FOR LIST NODES (pg_list.h)
-			 */
-			{ENUM_STR(T_List)},
-			{ENUM_STR(T_IntList)},
-			{ENUM_STR(T_OidList)},
-
-			/*
-			 * TAGS FOR STATEMENT NODES (mostly in parsenodes.h)
-			 */
-			{ENUM_STR(T_Query)},
-			{ENUM_STR(T_PlannedStmt)},
-			{ENUM_STR(T_InsertStmt)},
-			{ENUM_STR(T_DeleteStmt)},
-			{ENUM_STR(T_UpdateStmt)},
-			{ENUM_STR(T_SelectStmt)},
-			{ENUM_STR(T_AlterTableStmt)},
-			{ENUM_STR(T_AlterTableCmd)},
-			{ENUM_STR(T_AlterDomainStmt)},
-			{ENUM_STR(T_SetOperationStmt)},
-			{ENUM_STR(T_GrantStmt)},
-			{ENUM_STR(T_GrantRoleStmt)},
-			{ENUM_STR(T_AlterDefaultPrivilegesStmt)},
-			{ENUM_STR(T_ClosePortalStmt)},
-			{ENUM_STR(T_ClusterStmt)},
-			{ENUM_STR(T_CopyStmt)},
-			{ENUM_STR(T_CreateStmt)},
-			{ENUM_STR(T_DefineStmt)},
-			{ENUM_STR(T_DropStmt)},
-			{ENUM_STR(T_TruncateStmt)},
-			{ENUM_STR(T_CommentStmt)},
-			{ENUM_STR(T_FetchStmt)},
-			{ENUM_STR(T_IndexStmt)},
-			{ENUM_STR(T_CreateFunctionStmt)},
-			{ENUM_STR(T_AlterFunctionStmt)},
-			{ENUM_STR(T_DoStmt)},
-			{ENUM_STR(T_RenameStmt)},
-			{ENUM_STR(T_RuleStmt)},
-			{ENUM_STR(T_NotifyStmt)},
-			{ENUM_STR(T_ListenStmt)},
-			{ENUM_STR(T_UnlistenStmt)},
-			{ENUM_STR(T_TransactionStmt)},
-			{ENUM_STR(T_ViewStmt)},
-			{ENUM_STR(T_LoadStmt)},
-			{ENUM_STR(T_CreateDomainStmt)},
-			{ENUM_STR(T_CreatedbStmt)},
-			{ENUM_STR(T_DropdbStmt)},
-			{ENUM_STR(T_VacuumStmt)},
-			{ENUM_STR(T_ExplainStmt)},
-			{ENUM_STR(T_CreateTableAsStmt)},
-			{ENUM_STR(T_CreateSeqStmt)},
-			{ENUM_STR(T_AlterSeqStmt)},
-			{ENUM_STR(T_VariableSetStmt)},
-			{ENUM_STR(T_VariableShowStmt)},
-			{ENUM_STR(T_DiscardStmt)},
-			{ENUM_STR(T_CreateTrigStmt)},
-			{ENUM_STR(T_CreatePLangStmt)},
-			{ENUM_STR(T_CreateRoleStmt)},
-			{ENUM_STR(T_AlterRoleStmt)},
-			{ENUM_STR(T_DropRoleStmt)},
-			{ENUM_STR(T_LockStmt)},
-			{ENUM_STR(T_ConstraintsSetStmt)},
-			{ENUM_STR(T_ReindexStmt)},
-			{ENUM_STR(T_CheckPointStmt)},
-			{ENUM_STR(T_CreateSchemaStmt)},
-			{ENUM_STR(T_AlterDatabaseStmt)},
-			{ENUM_STR(T_AlterDatabaseSetStmt)},
-			{ENUM_STR(T_AlterRoleSetStmt)},
-			{ENUM_STR(T_CreateConversionStmt)},
-			{ENUM_STR(T_CreateCastStmt)},
-			{ENUM_STR(T_CreateOpClassStmt)},
-			{ENUM_STR(T_CreateOpFamilyStmt)},
-			{ENUM_STR(T_AlterOpFamilyStmt)},
-			{ENUM_STR(T_PrepareStmt)},
-			{ENUM_STR(T_ExecuteStmt)},
-			{ENUM_STR(T_DeallocateStmt)},
-			{ENUM_STR(T_DeclareCursorStmt)},
-			{ENUM_STR(T_CreateTableSpaceStmt)},
-			{ENUM_STR(T_DropTableSpaceStmt)},
-			{ENUM_STR(T_AlterObjectSchemaStmt)},
-			{ENUM_STR(T_AlterOwnerStmt)},
-			{ENUM_STR(T_DropOwnedStmt)},
-			{ENUM_STR(T_ReassignOwnedStmt)},
-			{ENUM_STR(T_CompositeTypeStmt)},
-			{ENUM_STR(T_CreateEnumStmt)},
-			{ENUM_STR(T_CreateRangeStmt)},
-			{ENUM_STR(T_AlterEnumStmt)},
-			{ENUM_STR(T_AlterTSDictionaryStmt)},
-			{ENUM_STR(T_AlterTSConfigurationStmt)},
-			{ENUM_STR(T_CreateFdwStmt)},
-			{ENUM_STR(T_AlterFdwStmt)},
-			{ENUM_STR(T_CreateForeignServerStmt)},
-			{ENUM_STR(T_AlterForeignServerStmt)},
-			{ENUM_STR(T_CreateUserMappingStmt)},
-			{ENUM_STR(T_AlterUserMappingStmt)},
-			{ENUM_STR(T_DropUserMappingStmt)},
-			{ENUM_STR(T_AlterTableSpaceOptionsStmt)},
-			{ENUM_STR(T_SecLabelStmt)},
-			{ENUM_STR(T_CreateForeignTableStmt)},
-			{ENUM_STR(T_CreateExtensionStmt)},
-			{ENUM_STR(T_AlterExtensionStmt)},
-			{ENUM_STR(T_AlterExtensionContentsStmt)},
-			{ENUM_STR(T_CreateEventTrigStmt)},
-			{ENUM_STR(T_AlterEventTrigStmt)},
-			{ENUM_STR(T_RefreshMatViewStmt)},
-
-			/*
-			 * TAGS FOR PARSE TREE NODES (parsenodes.h)
-			 */
-			{ENUM_STR(T_A_Expr)},
-			{ENUM_STR(T_ColumnRef)},
-			{ENUM_STR(T_ParamRef)},
-			{ENUM_STR(T_A_Const)},
-			{ENUM_STR(T_FuncCall)},
-			{ENUM_STR(T_A_Star)},
-			{ENUM_STR(T_A_Indices)},
-			{ENUM_STR(T_A_Indirection)},
-			{ENUM_STR(T_A_ArrayExpr)},
-			{ENUM_STR(T_ResTarget)},
-			{ENUM_STR(T_TypeCast)},
-			{ENUM_STR(T_CollateClause)},
-			{ENUM_STR(T_SortBy)},
-			{ENUM_STR(T_WindowDef)},
-			{ENUM_STR(T_RangeSubselect)},
-			{ENUM_STR(T_RangeFunction)},
-			{ENUM_STR(T_TypeName)},
-			{ENUM_STR(T_ColumnDef)},
-			{ENUM_STR(T_IndexElem)},
-			{ENUM_STR(T_Constraint)},
-			{ENUM_STR(T_DefElem)},
-			{ENUM_STR(T_RangeTblEntry)},
-			{ENUM_STR(T_SortGroupClause)},
-			{ENUM_STR(T_WindowClause)},
-			{ENUM_STR(T_PrivGrantee)},
-			{ENUM_STR(T_FuncWithArgs)},
-			{ENUM_STR(T_AccessPriv)},
-			{ENUM_STR(T_CreateOpClassItem)},
-			{ENUM_STR(T_TableLikeClause)},
-			{ENUM_STR(T_FunctionParameter)},
-			{ENUM_STR(T_LockingClause)},
-			{ENUM_STR(T_RowMarkClause)},
-			{ENUM_STR(T_XmlSerialize)},
-			{ENUM_STR(T_WithClause)},
-			{ENUM_STR(T_CommonTableExpr)},
-
-			/*
-			 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)
-			 */
-			{ENUM_STR(T_IdentifySystemCmd)},
-			{ENUM_STR(T_BaseBackupCmd)},
-			{ENUM_STR(T_StartReplicationCmd)},
-			{ENUM_STR(T_TimeLineHistoryCmd)},
-
-			/*
-			 * TAGS FOR RANDOM OTHER STUFF
-			 *
-			 * These are objects that aren't part of parse/plan/execute node tree
-			 * structures)}, but we give them NodeTags anyway for identification
-			 * purposes (usually because they are involved in APIs where we want to
-			 * pass multiple object types through the same pointer).
-			 */
-			{ENUM_STR(T_TriggerData)},		/* in commands/trigger.h */
-			{ENUM_STR(T_EventTriggerData)},			/* in commands/even{TAG_STR(T_trigger.h */
-			{ENUM_STR(T_ReturnSetInfo)},			/* in nodes/execnodes.h */
-			{ENUM_STR(T_WindowObjectData)},			/* private in nodeWindowAgg.c */
-			{ENUM_STR(T_TIDBitmap)},				/* in nodes/tidbitmap.h */
-			{ENUM_STR(T_InlineCodeBlock)},			/* in nodes/parsenodes.h */
-			{ENUM_STR(T_FdwRoutine)},				/* in foreign/fdwapi.h */
-			{0,""}
-		};
-	const NodeTagNameMapType *i;
-	for (i = tags; i->tag != tag && i->name[0] != '\0'; i++);
-	return i->name;
-}
-
-typedef struct JoinTypeNameMap
-{
-	JoinType type;
-	const char *name;
-} JoinTypeNameMap;
-
-const char*
-get_jointype_name(JoinType t)
-{
-	const JoinTypeNameMap types[] = {
-			{ENUM_STR(JOIN_INNER)},					/* matching tuple pairs only */
-			{ENUM_STR(JOIN_LEFT)},					/* pairs + unmatched LHS tuples */
-			{ENUM_STR(JOIN_FULL)},					/* pairs + unmatched LHS + unmatched RHS */
-			{ENUM_STR(JOIN_RIGHT)},					/* pairs + unmatched RHS tuples */
-
-		/*
-		 * Semijoins and anti-semijoins (as defined in relational theory) do not
-		 * appear in the SQL JOIN syntax, but there are standard idioms for
-		 * representing them (e.g., using EXISTS).	The planner recognizes these
-		 * cases and converts them to joins.  So the planner and executor must
-		 * support these codes.  NOTE: in JOIN_SEMI output, it is unspecified
-		 * which matching RHS row is joined to.  In JOIN_ANTI output, the row is
-		 * guaranteed to be null-extended.
-		 */
-			{ENUM_STR(JOIN_SEMI)},					/* 1 copy of each LHS row that has match(es) */
-			{ENUM_STR(JOIN_ANTI)},					/* 1 copy of each LHS row that has no match */
-
-		/*
-		 * These codes are used internally in the planner, but are not supported
-		 * by the executor (nor, indeed, by most of the planner).
-		 */
-			{ENUM_STR(JOIN_UNIQUE_OUTER)},			/* LHS path must be made unique */
-			{ENUM_STR(JOIN_UNIQUE_INNER)},			/* RHS path must be made unique */
-			{0,""}
-	};
-	const JoinTypeNameMap *i;
-	for (i=types; i->type != t && i->name[0] != '\0'; i++);
-	return i->name;
+	return n;
 }
