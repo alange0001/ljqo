@@ -62,8 +62,16 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel, const char *name)
 
 	printDebugGraph(graph);
 
-	renameDebugGraph(graph, "nodes");
-	printDebugGraphAsOctaveStruct(graph);
+	{ /* octave structure has "_octave" as suffix */
+		StringInfoData str;
+		initStringInfo(&str);
+		appendStringInfo(&str, "%s_octave", name);
+
+		renameDebugGraph(graph, str.data);
+		printDebugGraphAsOctaveStruct(graph);
+
+		pfree(str.data);
+	}
 
 	destroyDebugGraph(graph);
 }
