@@ -65,13 +65,13 @@ extern int sdp_max_iterations;
 /*
  * Configuration options:
  */
-#define DEFAULT_SDP_MIN_ITERATIONS    5
+#define DEFAULT_SDP_MIN_ITERATIONS    50
 #define     MIN_SDP_MIN_ITERATIONS    2
 #define     MAX_SDP_MIN_ITERATIONS    INT_MAX
 #define DEFAULT_SDP_MAX_ITERATIONS    240
 #define     MIN_SDP_MAX_ITERATIONS    10
 #define     MAX_SDP_MAX_ITERATIONS    INT_MAX
-#define DEFAULT_SDP_ITERATION_FACTOR  1
+#define DEFAULT_SDP_ITERATION_FACTOR  4
 #define     MIN_SDP_ITERATION_FACTOR  1
 #define     MAX_SDP_ITERATION_FACTOR  100
 

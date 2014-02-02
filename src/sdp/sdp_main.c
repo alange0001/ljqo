@@ -16,15 +16,19 @@
    ========================================================================
  */
 
-
-#include "postgres.h"
 #include "sdp.h"
-#include "nodes/nodes.h"
-#include "optimizer/paths.h"
-#include "optimizer/pathnode.h"
-#include "optimizer/joininfo.h"
-#include "utils/memutils.h"
+#include "sdp_join_rel_save.h"
+#include "sdp_mem_ctx.h"
+#include "sdp_debug.h"
 #include "opte.h"
+#include "debuggraph_rel.h"
+
+#include <nodes/nodes.h>
+#include <optimizer/paths.h>
+#include <optimizer/pathnode.h>
+#include <optimizer/joininfo.h>
+#include <utils/memutils.h>
+#include <lib/stringinfo.h>
 
 /*---------------------- CONFIGURATION VARIABLES -------------------------*/
 #ifndef LJQO /*if SDP is out ljqo library (in PostgreSQL source code) */
@@ -34,35 +38,6 @@ int sdp_threshold         = DEFAULT_SDP_THRESHOLD;
 int sdp_iteration_factor  = DEFAULT_SDP_ITERATION_FACTOR;
 int sdp_min_iterations    = DEFAULT_SDP_MIN_ITERATIONS;
 int sdp_max_iterations    = DEFAULT_SDP_MAX_ITERATIONS;
-
-/*------------------------------- DEBUG ----------------------------------*/
-#define SDP_DEBUG
-#define SDP_DEBUG2
-#ifdef SDP_DEBUG
-#	include "nodes/print.h"
-#	define SDP_DEBUG_MSG(format, ...) \
-		elog(DEBUG1, "SDP: " format, ##__VA_ARGS__)
-#else
-#	define SDP_DEBUG_MSG(...)
-#endif /* SDP_DEBUG */
-#ifdef SDP_DEBUG2
-#	define SDP_DEBUG_MSG2(format, ...) \
-		elog(DEBUG1, "SDP: " format, ##__VA_ARGS__)
-	/*SDP_DEBUG_MSG2_IN: Initialization and Destruction */
-#	define SDP_DEBUG_MSG2_IN(...)
-	/*SDP_DEBUG_MSG2_MC: Memory Context */
-#	define SDP_DEBUG_MSG2_MC(...)
-	/*SDP_DEBUG_MSG2_SS: S-Phase sampling */
-#	define SDP_DEBUG_MSG2_SS(...)
-	/*SDP_DEBUG_MSG2_SR: S-Phase reconstruction */
-#	define SDP_DEBUG_MSG2_SR(...)
-	/*SDP_DEBUG_MSG2_DM: DP-Phase matrix */
-#	define SDP_DEBUG_MSG2_DM(...)
-#else
-#	define SDP_DEBUG_MSG2(...)
-#	define SDP_DEBUG_MSG2_IN(...)
-#	define SDP_DEBUG_MSG2_MC(...)
-#endif /* SDP_DEBUG2 */
 
 /*------------------------ MAIN INTERNAL TYPES ---------------------------*/
 /**
@@ -99,33 +74,22 @@ typedef struct private_data_type {
 	List*             initial_rels;
 	RelOptInfo**      node_list; /* initial_rels in the form of array */
 	edge_list_type    edge_list; /* list of edges in a query graph */
+	root_join_rel_save_type save_root_join_rel;
+	Cost              s_phase_rel_cost;
 	OPTE_DECLARE      ( *opte );
 } private_data_type;
 
-/**
- * temp_context_type:
- *    This structure stores data about the PlannerInfo and the memory context.
- *    The functions temporary_context_*() use this structure to enter and
- *    leave to/from a temporary memory context. The temporary memory contexts
- *    are used by initialization and S-phase to evaluate possible joins using
- *    make_join_rel().
- */
-typedef struct temp_context_type {
-	PlannerInfo*  root;
-	int           savelength;
-	struct HTAB*  savehash;
-	MemoryContext mycontext;
-	MemoryContext oldcxt;
-} temp_context_type;
-
 /*----------------------------- PROTOTYPES -------------------------------*/
+#define cheapest_total(rel) ((rel)->cheapest_total_path->total_cost)
+
 static void initiate_private_data(private_data_type* private_data,
 		PlannerInfo *root, int number_of_rels, List *initial_rels);
 static void finalize_private_data(private_data_type* private_data);
 static RelOptInfo** s_phase(private_data_type* private_data);
 static RelOptInfo* dp_phase(private_data_type* private_data,
-		RelOptInfo** sequence);
-
+		RelOptInfo **sequence);
+static RelOptInfo* reconstruct_s_phase_rel(PlannerInfo *root,
+		RelOptInfo **sequence, int nrels);
 
 /*==========================  MAIN FUNCTIONS =============================*/
 
@@ -137,118 +101,97 @@ static RelOptInfo* dp_phase(private_data_type* private_data,
 RelOptInfo*
 sdp(PlannerInfo* root, int number_of_rels, List* initial_rels)
 {
-	private_data_type private_data; /*this variable must be initialized using
+	private_data_type pdata; /*this variable must be initialized using
 	                                  initiate_private_data()*/
-	RelOptInfo** s_phase_ret;
+	RelOptInfo** s_phase_sequence;
 	RelOptInfo*  ret;
 
-	OPTE_GET_BY_PLANNERINFO( private_data.opte, root );
+	OPTE_GET_BY_PLANNERINFO( pdata.opte, root );
 
 	SDP_DEBUG_MSG("> sdp(root=%p, number_of_rels=%d, initial_rels=%p)",
 			root, number_of_rels, initial_rels);
 	Assert(number_of_rels >= MIN_SDP_THRESHOLD);
 
-	initiate_private_data(&private_data, root, number_of_rels, initial_rels);
+	initiate_private_data(&pdata, root, number_of_rels, initial_rels);
 
 	/* ------------ calling the optimization phases: ------------ */
-	OPTE_PRINT_TIME( private_data.opte, "before_phase_1" );
-	s_phase_ret = s_phase(&private_data);       /* phase 1: Sampling */
+	OPTE_PRINT_TIME( pdata.opte, "before_phase_1" );
+	s_phase_sequence = s_phase(&pdata);       /* phase 1: Sampling */
 
-	OPTE_PRINT_TIME( private_data.opte, "before_phase_2" );
+	OPTE_PRINT_TIME( pdata.opte, "before_phase_2" );
 
-	ret = dp_phase(&private_data, s_phase_ret); /* phase 2: Dynamic Prog. */
+	ret = dp_phase(&pdata, s_phase_sequence); /* phase 2: Dynamic Prog. */
+	Assert(ret && IsA(ret, RelOptInfo) && ret->cheapest_total_path);
 
-	OPTE_PRINT_TIME( private_data.opte, "after_phase_2" );
+	OPTE_PRINT_TIME( pdata.opte, "after_phase_2" );
 	/* ------------ end of the optimization phases ------------ */
 
-	finalize_private_data(&private_data);
+	/* Check if s_phase's cheapest_total_path is cheaper than dp_phase's.
+	 * This fact should never happen. However, the fuzzy comparisons in
+	 * add_path function can permit such cases. */
+	if (pdata.s_phase_rel_cost && pdata.s_phase_rel_cost < cheapest_total(ret))
+	{
+		RelOptInfo *aux;
+		elog(WARNING, "sdp's sampling phase generated the cheapest path."
+				" Trying to reconstruct it");
+		restore_root_join_rel(&pdata.save_root_join_rel, root);
+		aux = reconstruct_s_phase_rel(root, s_phase_sequence, number_of_rels);
+		if (aux && aux->cheapest_total_path
+				&& cheapest_total(aux) < cheapest_total(ret))
+			ret = aux;
+		else
+			elog(WARNING, "s-phase path reconstruction failed");
+	}
 
-	Assert(IsA(ret, RelOptInfo));
+	/* ------------ finalizations ------------ */
+	finalize_private_data(&pdata);
+	Assert(s_phase_sequence);
+	pfree(s_phase_sequence);
+
+	Assert(ret && IsA(ret, RelOptInfo) && ret->cheapest_total_path);
 
 	SDP_DEBUG_MSG("< sdp()");
 	return ret;
 }
 
 /*==================  INITIALIZATION AND FINALIZATION ===================*/
-static void create_edge_list(private_data_type* private_data);
-
-static void
-initiate_private_data(private_data_type* private_data, PlannerInfo *root,
-		int number_of_rels, List *initial_rels)
-{
-	SDP_DEBUG_MSG2_IN("> initiate_private_data(root=%p, number_of_rels=%d, "
-			"initial_rels=%p)", root, number_of_rels, initial_rels);
-	Assert(IsA(root, PlannerInfo));
-	Assert(number_of_rels > 0);
-
-	private_data->root = root;
-	private_data->number_of_rels = number_of_rels;
-	private_data->initial_rels = initial_rels;
-
-	private_data->node_list = palloc(sizeof(RelOptInfo*) * number_of_rels);
-	{
-		int i = 0;
-		ListCell* cell;
-		RelOptInfo* rel;
-
-		foreach(cell, initial_rels)
-		{
-			rel = (RelOptInfo*) lfirst(cell);
-			Assert(IsA(rel, RelOptInfo));
-			private_data->node_list[i++] = rel;
-		}
-		Assert(i == number_of_rels);
-	}
-
-	/* this function call depends on node_list and number_of_rels*/
-	create_edge_list(private_data);
-
-	SDP_DEBUG_MSG2_IN("< initiate_private_data()");
-	/* at this point the private_data is complete */
-}
-
-static void destroy_edge_list(edge_list_type* edge_list);
-
-static void
-finalize_private_data(private_data_type* private_data)
-{
-	SDP_DEBUG_MSG2_IN("> destroy_private_data(private_data=%p)", private_data);
-
-	pfree(private_data->node_list);
-	destroy_edge_list(&private_data->edge_list);
-
-	SDP_DEBUG_MSG2_IN("< destroy_private_data()");
-}
-
-static inline void create_edge(edge_type* out,
-		RelOptInfo* rel1, RelOptInfo* rel2);
-
-static temp_context_type* temporary_context_create(PlannerInfo* root);
-static temp_context_type* temporary_context_enter(
-		temp_context_type* saved_data, PlannerInfo* root);
-static void temporary_context_clear_root(temp_context_type* saved_data,
-		PlannerInfo *root);
-static void temporary_context_restore_root(temp_context_type* saved_data,
-		PlannerInfo *root);
-static void temporary_context_leave(temp_context_type* saved_data);
-static void temporary_context_destroy(temp_context_type* saved_data,
-		bool restore_root);
 
 /**
  * is_it_a_possible_join:
  *    Evaluates whether rel1 and rel2 may be joined with make_join_rel().
  */
 static bool
-is_it_a_possible_join(temp_context_type* saved_context,
-		RelOptInfo* rel1, RelOptInfo* rel2)
+is_it_a_possible_join(temp_context_type *saved_context, PlannerInfo *root,
+		RelOptInfo *rel1, RelOptInfo *rel2)
 {
 	RelOptInfo* new_rel;
+	Assert(saved_context);
+	Assert(root && IsA(root, PlannerInfo));
+	Assert(rel1 && IsA(rel1, RelOptInfo) && rel1->cheapest_total_path);
+	Assert(rel2 && IsA(rel2, RelOptInfo) && rel2->cheapest_total_path);
 
-	temporary_context_enter(saved_context, NULL);
-	new_rel = make_join_rel(saved_context->root, rel1, rel2);
+	temporary_context_enter(saved_context);
+	new_rel = make_join_rel(root, rel1, rel2);
 	temporary_context_leave(saved_context);
 
 	return (new_rel != NULL);
+}
+
+/**
+ * create_edge:
+ *    This function only sets the values of "out" variable according to
+ *    rel1 and rel2.
+ */
+static inline void
+create_edge(edge_type* out, RelOptInfo* rel1, RelOptInfo* rel2)
+{
+	Assert(IsA(rel1, RelOptInfo));
+	Assert(IsA(rel2, RelOptInfo));
+	Assert(!bms_overlap(rel1->relids, rel2->relids));
+
+	out->relids = bms_union(rel1->relids, rel2->relids);
+	out->node1 = rel1;
+	out->node2 = rel2;
 }
 
 /**
@@ -277,12 +220,13 @@ create_edge_list(private_data_type* private_data)
 
 	edge_list = palloc(sizeof(edge_type) * max_size);
 	{
-		temp_context_type* save_context;
+		temp_context_type save_context;
 		int i, j;
 		int nrels = private_data->number_of_rels;
 		bool* used = palloc0(sizeof(bool) * nrels);
 
-		save_context = temporary_context_create(private_data->root);
+		temporary_context_create(&save_context);
+		clear_root_join_rel(&private_data->save_root_join_rel, root);
 
 		for(i=0; i<nrels; i++)
 		{
@@ -294,7 +238,7 @@ create_edge_list(private_data_type* private_data)
 
 				if ((have_relevant_joinclause(root, rel1, rel2) ||
 				       have_join_order_restriction(root, rel1, rel2))
-				    /*&& is_it_a_possible_join(save_context, rel1, rel2)*/)
+				    /*&& is_it_a_possible_join(&save_context, rel1, rel2)*/)
 				{
 					used[i] = used[j] = true;
 
@@ -322,7 +266,8 @@ create_edge_list(private_data_type* private_data)
 					{
 						RelOptInfo* rel2 = private_data->node_list[j];
 
-						if( is_it_a_possible_join(save_context, rel1, rel2) )
+						if (is_it_a_possible_join(&save_context, root,
+								rel1, rel2))
 						{
 							SDP_DEBUG_MSG2_IN("  create_edge_list() "
 									"edge_list[%u] = (%u,%u)",
@@ -339,8 +284,9 @@ create_edge_list(private_data_type* private_data)
 			}
 		}
 
-		temporary_context_destroy(save_context, true);
 		pfree(used);
+		restore_root_join_rel(&private_data->save_root_join_rel, root);
+		temporary_context_destroy(&save_context);
 	}
 
 	private_data->edge_list.size = list_size;
@@ -349,23 +295,6 @@ create_edge_list(private_data_type* private_data)
 	SDP_DEBUG_MSG2_IN("  create_edge_list() edge_list_size=%u",
 			private_data->edge_list.size);
 	SDP_DEBUG_MSG2_IN("< create_edge_list()");
-}
-
-/**
- * create_edge:
- *    This function only sets the values of "out" variable according to
- *    rel1 and rel2.
- */
-static inline void
-create_edge(edge_type* out, RelOptInfo* rel1, RelOptInfo* rel2)
-{
-	Assert(IsA(rel1, RelOptInfo));
-	Assert(IsA(rel2, RelOptInfo));
-	Assert(!bms_overlap(rel1->relids, rel2->relids));
-
-	out->relids = bms_union(rel1->relids, rel2->relids);
-	out->node1 = rel1;
-	out->node2 = rel2;
 }
 
 /**
@@ -390,6 +319,58 @@ destroy_edge_list(edge_list_type* edge_list)
 	SDP_DEBUG_MSG2_IN("< destroy_edge_list()");
 }
 
+static void
+initiate_private_data(private_data_type* private_data, PlannerInfo *root,
+		int number_of_rels, List *initial_rels)
+{
+	Assert(private_data);
+	Assert(IsA(root, PlannerInfo));
+	Assert(number_of_rels > 0);
+	SDP_DEBUG_MSG2_IN("> initiate_private_data(root=%p, number_of_rels=%d, "
+			"initial_rels=%p)", root, number_of_rels, initial_rels);
+
+	private_data->root = root;
+	private_data->number_of_rels = number_of_rels;
+	private_data->initial_rels = initial_rels;
+
+	private_data->node_list = palloc(sizeof(RelOptInfo*) * number_of_rels);
+	{
+		int i = 0;
+		ListCell* cell;
+		RelOptInfo* rel;
+
+		foreach(cell, initial_rels)
+		{
+			rel = (RelOptInfo*) lfirst(cell);
+			Assert(IsA(rel, RelOptInfo));
+			private_data->node_list[i++] = rel;
+		}
+		Assert(i == number_of_rels);
+	}
+
+	/* save initial conditions of root->join_rel_list and join_rel_hash*/
+	save_root_join_rel(&private_data->save_root_join_rel, root);
+
+	/* this function call depends on node_list and number_of_rels*/
+	create_edge_list(private_data);
+
+	private_data->s_phase_rel_cost = 0;
+
+	SDP_DEBUG_MSG2_IN("< initiate_private_data()");
+	/* at this point the private_data is complete */
+}
+
+static void
+finalize_private_data(private_data_type* private_data)
+{
+	SDP_DEBUG_MSG2_IN("> destroy_private_data(private_data=%p)", private_data);
+
+	pfree(private_data->node_list);
+	destroy_edge_list(&private_data->edge_list);
+
+	SDP_DEBUG_MSG2_IN("< destroy_private_data()");
+}
+
 /*============================= S-PHASE =================================*/
 /**
  * sample_return_type:
@@ -403,146 +384,6 @@ typedef struct sample_return_type
 	RelOptInfo** list_position;
 	int          rel_count;
 } sample_return_type;
-
-static List* s_phase_get_a_sample(edge_list_type* edge_list,
-		RelOptInfo** cur_rels, PlannerInfo* root, int nrels);
-static RelOptInfo* s_phase_reconstruct_cheapest_path(PlannerInfo *root,
-		RelOptInfo *min_rel);
-#ifdef USE_ASSERT_CHECKING
-static void AssertContextRel(RelOptInfo *rel);
-#else
-#define AssertRelContext(...)
-#endif
-
-/**
- * s_phase:
- *    Main function of S-Phase. This is a randomized algorithm which randomly
- *    generates a number of possible left-deep trees (samples) for the query
- *    based in its query-graph. This graph is represented by private_data->
- *    edge_list. The cost of each random sample is evaluated, and the cheapest
- *    one is elected for the next phase (DP-phase).
- *
- *    The return of this function is a vector of RelOptInfo*, which consists
- *    on the join order of the cheapest generated sample.
- */
-static RelOptInfo**
-s_phase(private_data_type* private_data)
-{
-	RelOptInfo** ret;
-	int nrels = private_data->number_of_rels;
-
-	SDP_DEBUG_MSG("> s_phase(private_data=%p)", private_data);
-	Assert(IsA(private_data->root, PlannerInfo)); /* sanity check */
-	Assert(nrels > 0);
-	Assert(private_data->edge_list.size > 0);
-
-	{
-		temp_context_type* save_context;
-		Cost          min_cost = 0;
-		RelOptInfo*   min_r;
-		RelOptInfo**  min_rels = palloc(sizeof(RelOptInfo*) * nrels);
-		RelOptInfo**  cur_rels = palloc(sizeof(RelOptInfo*) * nrels);
-		PlannerInfo*  root = private_data->root;
-		int           loop;
-		int           end_loop = nrels * sdp_iteration_factor;
-
-		/* this array of List* isn't used by SDP */
-		Assert(root->join_rel_level == NULL);
-
-		/* creating a new memory context */
-		save_context = temporary_context_enter(NULL, root);
-
-		/* set the number of samples generated in this phase */
-		if( end_loop < sdp_min_iterations )
-			end_loop = sdp_min_iterations;
-		else if( end_loop > sdp_max_iterations )
-			end_loop = sdp_max_iterations;
-
-		/* S-phase's main loop:
-		 *    Get end_loop samples from the query and elect the one with
-		 *    cheapest cost */
-		for( loop=0; loop < end_loop; loop++ )
-		{
-			List*                returned_list;
-			sample_return_type*  returned_item;
-			RelOptInfo*          cur_rel;
-
-			SDP_DEBUG_MSG2_SS("  s_phase(): loop=%d", loop);
-
-			/* root->join_rel_list must be cleaned before a new sample. */
-			/* It's also expected that root->join_rel_hash = NULL. */
-			temporary_context_clear_root(save_context, root);
-
-			/* get a new sample:
-			 *   returned_list and cur_rels are outputs from the function call */
-			returned_list = s_phase_get_a_sample(&private_data->edge_list,
-					cur_rels, root, nrels);
-
-			/* it's expected only one returned_item* in returned_list */
-			Assert(list_length(returned_list) == 1);
-			returned_item = (sample_return_type*)
-			                lfirst(list_head(returned_list));
-			Assert(returned_item->list_position == cur_rels);
-			cur_rel = returned_item->rel;
-
-			Assert(IsA(cur_rel, RelOptInfo));
-
-			OPTE_CONVERG( private_data->opte,
-			              cur_rel->cheapest_total_path->total_cost );
-
-			if( !min_cost ||
-				 min_cost > cur_rel->cheapest_total_path->total_cost)
-			{
-				/* swap cur_rels <--> min_rels */
-				RelOptInfo** aux = cur_rels;
-				cur_rels = min_rels;
-				min_rels = aux;
-
-				SDP_DEBUG_MSG2("  s_phase(): loop=%d, min_cost=%lf --> %lf",
-						loop, min_cost,
-						cur_rel->cheapest_total_path->total_cost);
-
-				min_r = cur_rel;
-				min_cost = cur_rel->cheapest_total_path->total_cost;
-			}
-		} /* end for(loop) */
-
-		if( min_cost == 0 )
-			elog(ERROR, "SDP: S-phase could not get any valid sample "
-			            "for the query");
-
-		SDP_DEBUG_MSG("  s_phase(): min_cost=%lf", min_cost);
-		opte_printf("Phase1 Cost = %.2lf", min_cost);
-
-		/* restore old memory context */
-		temporary_context_leave(save_context);
-		temporary_context_restore_root(save_context, root);
-
-		//min_r = s_phase_reconstruct_cheapest_path(root, min_r);
-		//AssertContextRel(min_r);
-
-		temporary_context_destroy(save_context, false);
-
-#		ifdef USE_ASSERT_CHECKING
-		{
-			int i;
-			for( i=0; i<nrels; i++ )
-			{
-				Assert(IsA(min_rels[i], RelOptInfo));
-				SDP_DEBUG_MSG2("  s_phase(): min_rels[%d] = %u",
-						i, min_rels[i]->relid);
-			}
-		}
-#		endif
-
-		pfree(cur_rels); /* we don't need this array any more */
-		ret = min_rels; /* min_rels array will be returned by this function */
-	}
-
-
-	SDP_DEBUG_MSG("< s_phase()");
-	return ret;
-}
 
 static inline void
 swap_edge(edge_type* e1, edge_type* e2)
@@ -573,13 +414,6 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 
 	SDP_DEBUG_MSG2_SS("> s_phase_get_a_sample(edge_list(%d), nrels=%d)",
 					edge_list->size, nrels);
-#	ifdef SDP_DEBUG2
-	fprintf(stderr, "DEBUG:  SDP:   s_phase_get_a_sample(): edge_list: ");
-	for( i=0; i<edge_list_size; i++ )
-		fprintf(stderr, "(%u,%u), ", edge_list->list[i].node1->relid,
-				edge_list->list[i].node2->relid);
-	fprintf(stderr, "\n");
-#	endif
 
 	for( i=0, rel_count=0; i < edge_list_size && rel_count < nrels; )
 	{
@@ -841,29 +675,136 @@ s_phase_get_a_sample(edge_list_type* edge_list, RelOptInfo** cur_rels,
 }
 
 /**
- * s_phase_reconstruct_min_rel:
- *    Reconstruct min_rel in the old memory context.
+ * s_phase:
+ *    Main function of S-Phase. This is a randomized algorithm which randomly
+ *    generates a number of possible left-deep trees (samples) for the query
+ *    based in its query-graph. This graph is represented by private_data->
+ *    edge_list. The cost of each random sample is evaluated, and the cheapest
+ *    one is elected for the next phase (DP-phase).
+ *
+ *    The return of this function is a vector of RelOptInfo*, which consists
+ *    on the join order of the cheapest generated sample.
  */
-static RelOptInfo*
-s_phase_reconstruct_cheapest_path(PlannerInfo *root, RelOptInfo *min_rel)
+static RelOptInfo**
+s_phase(private_data_type* private_data)
 {
-	RelOptInfo *ret = NULL;
-	Path *path;
+	int nrels = private_data->number_of_rels;
+	RelOptInfo**  ret = NULL;
 
-	SDP_DEBUG_MSG2_SR("> s_phase_reconstruct_cheapest_path(root=%p, min_rel=%p)",
-	               root, min_rel);
+	SDP_DEBUG_MSG("> s_phase(private_data=%p)", private_data);
+	Assert(IsA(private_data->root, PlannerInfo)); /* sanity check */
+	Assert(nrels > 0);
+	Assert(private_data->edge_list.size > 0);
 
-	Assert(root && IsA(root, PlannerInfo));
-	Assert(min_rel && IsA(min_rel, RelOptInfo));
-	Assert(min_rel->cheapest_total_path);
+	{
+		temp_context_type save_context;
+		Cost          min_cost = 0;
+		RelOptInfo*   min_r;
+		RelOptInfo**  min_rels = palloc(sizeof(RelOptInfo*) * nrels);
+		RelOptInfo**  cur_rels = palloc(sizeof(RelOptInfo*) * nrels);
+		PlannerInfo*  root = private_data->root;
+		int           loop;
+		int           end_loop = nrels * sdp_iteration_factor;
 
+		/* this array of List* isn't used by SDP */
+		Assert(root->join_rel_level == NULL);
 
-	SDP_DEBUG_MSG2_SR("< s_phase_reconstruct_cheapest_path(root=%p, min_rel=%p)"
-	               " = %p", root, min_rel, ret);
+		/* creating a new memory context */
+		temporary_context_create(&save_context);
+		temporary_context_enter(&save_context);
+
+		/* set the number of samples generated in this phase */
+		if( end_loop < sdp_min_iterations )
+			end_loop = sdp_min_iterations;
+		else if( end_loop > sdp_max_iterations )
+			end_loop = sdp_max_iterations;
+
+		/* S-phase's main loop:
+		 *    Get end_loop samples from the query and elect the one with
+		 *    cheapest cost */
+		for( loop=0; loop < end_loop; loop++ )
+		{
+			List*                returned_list;
+			sample_return_type*  returned_item;
+			RelOptInfo*          cur_rel;
+
+			SDP_DEBUG_MSG2_SS("  s_phase(): loop=%d", loop);
+
+			/* root->join_rel_list must be cleaned before a new sample. */
+			/* It's also expected that root->join_rel_hash = NULL. */
+			clear_root_join_rel(&private_data->save_root_join_rel, root);
+
+			/* get a new sample:
+			 *   returned_list and cur_rels are outputs from the function call */
+			returned_list = s_phase_get_a_sample(&private_data->edge_list,
+					cur_rels, root, nrels);
+
+			/* it's expected only one returned_item* in returned_list */
+			Assert(list_length(returned_list) == 1);
+			returned_item = (sample_return_type*)
+			                lfirst(list_head(returned_list));
+			Assert(returned_item->list_position == cur_rels);
+			cur_rel = returned_item->rel;
+
+			Assert(IsA(cur_rel, RelOptInfo));
+
+			OPTE_CONVERG( private_data->opte, cheapest_total(cur_rel) );
+
+			if( !min_cost ||
+				 min_cost > cheapest_total(cur_rel))
+			{
+				/* swap cur_rels <--> min_rels */
+				RelOptInfo** aux = cur_rels;
+				cur_rels = min_rels;
+				min_rels = aux;
+
+				SDP_DEBUG_MSG2("  s_phase(): loop=%d, min_cost=%lf --> %lf",
+						loop, min_cost, cheapest_total(cur_rel));
+
+				min_r = cur_rel;
+				min_cost = cheapest_total(cur_rel);
+			}
+		} /* end for(loop) */
+
+		if( min_cost == 0 )
+			elog(ERROR, "SDP: S-phase could not get any valid sample "
+			            "for the query");
+
+		SDP_DEBUG_MSG("  s_phase(): min_cost=%lf", min_cost);
+		opte_printf("Phase1 Cost = %.2lf", min_cost);
+
+		/* restore old memory context */
+		temporary_context_leave(&save_context);
+		restore_root_join_rel(&private_data->save_root_join_rel, root);
+		temporary_context_destroy(&save_context);
+
+#		ifdef USE_ASSERT_CHECKING
+		{
+			int i;
+			for( i=0; i<nrels; i++ )
+			{
+				Assert(IsA(min_rels[i], RelOptInfo));
+				SDP_DEBUG_MSG2("  s_phase(): min_rels[%d] = %u",
+						i, min_rels[i]->relid);
+			}
+		}
+#		endif
+
+		/* we don't need this array any more */
+		pfree(cur_rels);
+		/* this cost permits a comparison between s-phase and dp-phase */
+		private_data->s_phase_rel_cost = min_cost;
+		/* min_rels array need to be returned by this function */
+		ret = min_rels;
+	}
+
+	Assert(ret);
+	SDP_DEBUG_MSG("< s_phase()");
 	return ret;
 }
 
-/*============================= DP-PHASE ================================*/
+/*===========================================================================*/
+/*=============================== DP-PHASE ==================================*/
 
 /**
  * dp_phase:
@@ -880,25 +821,25 @@ s_phase_reconstruct_cheapest_path(PlannerInfo *root, RelOptInfo *min_rel)
  *    The return of this function is the result of SDP optimization process.
  */
 static RelOptInfo*
-dp_phase(private_data_type* private_data, RelOptInfo** sequence)
+dp_phase(private_data_type *private_data, RelOptInfo **sequence)
 {
-	RelOptInfo* ret;
+	RelOptInfo* ret; /*return*/
 	PlannerInfo* root = private_data->root;
 	int nrels = private_data->number_of_rels;
 	int level;
-
 	RelOptInfo*** matrix = palloc(sizeof(RelOptInfo**) * nrels);
 
 	SDP_DEBUG_MSG("> dp_phase(private_data=%p, sequence=%p)",
 			private_data, sequence);
 	Assert(IsA(root, PlannerInfo)); /* sanity checks */
+	Assert(sequence);
 	Assert(nrels > 1);
 
 	for( level = 0; level < nrels; level++ )
 	{
 		int p;
 
-		SDP_DEBUG_MSG2_DM("  dp_phase(): level=%d", level);
+		SDP_DEBUG_MSG2_DP("  dp_phase(): level=%d", level);
 
 		if( level > 0 )
 			matrix[level] = palloc(sizeof(RelOptInfo*) * nrels -level);
@@ -915,7 +856,7 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 			int i;
 			matrix[level][p] = NULL; /* no initial RelOptInfo for [level][p] */
 
-			for( i=0; i<level; i++ )
+			for( i=level-1; i>=0; i-- )
 			{
 				RelOptInfo* rel1;
 				RelOptInfo* rel2;
@@ -950,9 +891,9 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 			if( matrix[level][p] )
 			{
 				set_cheapest(matrix[level][p]);
-				SDP_DEBUG_MSG2_DM("  dp_phase(): matrix[level=%d][p=%d] = %lf",
+				SDP_DEBUG_MSG2_DP("  dp_phase(): matrix[level=%d][p=%d] = %lf",
 						level, p,
-						matrix[level][p]->cheapest_total_path->total_cost);
+						cheapest_total(matrix[level][p]));
 			}
 		}
 
@@ -963,12 +904,13 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 		            "the query");
 
 	Assert(IsA(matrix[nrels-1][0], RelOptInfo));
-
 	ret = matrix[nrels-1][0];
-	SDP_DEBUG_MSG("  dp_phase(): best plan found! cost=%lf",
-			ret->cheapest_total_path->total_cost);
 
-	for( level = 0; level < nrels; level++ )
+	Assert(ret->cheapest_total_path);
+	SDP_DEBUG_MSG("  dp_phase(): best plan found! cost=%lf",
+			cheapest_total(ret));
+
+	for( level = 1; level < nrels; level++ ) /* do not free level=0 here */
 		pfree(matrix[level]);
 	pfree(matrix);
 
@@ -976,159 +918,66 @@ dp_phase(private_data_type* private_data, RelOptInfo** sequence)
 	return ret;
 }
 
-/*============================== UTILITIES =================================*/
+/*===========================================================================*/
+/*======================= S-Phase path reconstruction =======================*/
 
-static temp_context_type*
-temporary_context_create(PlannerInfo* root)
+/**
+ * s_phase_reconstruct:
+ *    Reconstruct the RelOptInfo obtained by s-phase. This function is used
+ *    when s-phase generates a better RelOptInfo than dp-phase.
+ *    Theoretically, db-phase's search space includes the plan generated by
+ *    s-phase. However, fuzzy comparisons in add_path() may discard such plans.
+ */
+static RelOptInfo*
+reconstruct_s_phase_rel(PlannerInfo *root, RelOptInfo **sequence, int nrels)
 {
-	temp_context_type* ret = palloc(sizeof(temp_context_type));
+	RelOptInfo *ret = NULL;
 
-	SDP_DEBUG_MSG2_MC("> temporary_context_create(root=%p)", root);
-	Assert(IsA(root, PlannerInfo));
+	Assert(root && IsA(root, PlannerInfo));
+	Assert(nrels > 0);
+	Assert(sequence);
 
-	ret->root = root;
-	ret->mycontext = AllocSetContextCreate(CurrentMemoryContext,
-									  "SDP Temp",
-									  ALLOCSET_DEFAULT_MINSIZE,
-									  ALLOCSET_DEFAULT_INITSIZE,
-									  ALLOCSET_DEFAULT_MAXSIZE);
-	ret->savelength = list_length(root->join_rel_list);
-	ret->savehash = root->join_rel_hash;
-	root->join_rel_hash = NULL;
+	SDP_DEBUG_MSG2_SR("> s_phase_reconstruct(root=%p, nrels=%d)",
+			root, nrels);
 
-	SDP_DEBUG_MSG2_MC("< temporary_context_create()");
-	return ret;
-}
-
-static temp_context_type*
-temporary_context_enter(temp_context_type* saved_data, PlannerInfo* root)
-{
-	SDP_DEBUG_MSG2_MC("> temporary_context_enter(saved_data=%p, root=%p)",
-			saved_data, root);
-	Assert( (saved_data && !root) || (!saved_data && root) );
-
-	if( !saved_data )
-		saved_data = temporary_context_create(root);
-
-	saved_data->oldcxt = MemoryContextSwitchTo(saved_data->mycontext);
-
-	SDP_DEBUG_MSG2_MC("< temporary_context_enter()");
-	return saved_data;
-}
-
-static void
-temporary_context_clear_root(temp_context_type* saved_data,
-		PlannerInfo *root)
-{
-	SDP_DEBUG_MSG2_MC("> temporary_context_clean_root(saved_data=%p, root=%p)",
-			saved_data, root);
-	Assert(saved_data && root);
-	Assert(IsA(saved_data->root, PlannerInfo));
-
-	root->join_rel_list = list_truncate(
-			root->join_rel_list, saved_data->savelength);
-	root->join_rel_hash = NULL;
-
-	SDP_DEBUG_MSG2_MC("< temporary_context_clean_root()");
-}
-
-static void
-temporary_context_restore_root(temp_context_type* saved_data,
-		PlannerInfo *root)
-{
-	SDP_DEBUG_MSG2_MC("> temporary_context_restore_root(saved_data=%p, root=%p)",
-			saved_data, root);
-	Assert(saved_data && root);
-	Assert(IsA(saved_data->root, PlannerInfo));
-
-	saved_data->root->join_rel_list = list_truncate(
-				saved_data->root->join_rel_list, saved_data->savelength);
-	saved_data->root->join_rel_hash = saved_data->savehash;
-
-	SDP_DEBUG_MSG2_MC("< temporary_context_restore_root()");
-}
-
-static void
-temporary_context_leave(temp_context_type* saved_data)
-{
-	SDP_DEBUG_MSG2_MC("> temporary_context_leave(saved_data=%p)", saved_data);
-	Assert(saved_data);
-	Assert(IsA(saved_data->root, PlannerInfo));
-
-	MemoryContextSwitchTo(saved_data->oldcxt);
-
-	SDP_DEBUG_MSG2_MC("< temporary_context_leave()");
-}
-
-static void
-temporary_context_destroy(temp_context_type* saved_data,
-		bool restore_root)
-{
-	SDP_DEBUG_MSG2_MC("> temporary_context_destroy(saved_data=%p,"
-	               " restore_root=%d)", saved_data, restore_root);
-	Assert(saved_data);
-	Assert(IsA(saved_data->root, PlannerInfo));
-
-	if( restore_root )
-		temporary_context_restore_root(saved_data, saved_data->root);
-
-	MemoryContextDelete(saved_data->mycontext);
-	pfree(saved_data);
-
-	SDP_DEBUG_MSG2_MC("< temporary_context_destroy()");
-}
-
-/*============================== ASSERTIONS =================================*/
-#ifdef USE_ASSERT_CHECKING
-
-static void AssertContextPath(Path *path);
-
-static void
-AssertContextRel(RelOptInfo *rel)
-{
-	Assert(rel && IsA(rel, RelOptInfo) );
-	Assert(MemoryContextContains(CurrentMemoryContext, rel));
-
-	{ /* pathlist: */
-		ListCell *l;
-		foreach(l, rel->pathlist){
-			Path *path = (Path*) lfirst(l);
-			AssertContextPath(path);
-		}
-	} /* pathlist */
-}
-
-static void
-AssertContextPath(Path *path)
-{
-	Assert(path);
-	Assert(MemoryContextContains(CurrentMemoryContext, path));
-
-	Assert(path->parent && IsA(path->parent, RelOptInfo));
-	Assert(MemoryContextContains(CurrentMemoryContext, path->parent));
-
-	switch (nodeTag(path))
 	{
-		Path *path_sub;
-		JoinPath *path_join;
+		RelOptInfo **vector;
+		int vector_size, i;
 
-		case T_MaterialPath: /* Subplans: */
-			path_sub = ((MaterialPath *) path)->subpath;
-			AssertContextPath(path_sub);
-			break;
-		case T_UniquePath:
-			path_sub = ((UniquePath *) path)->subpath;
-			AssertContextPath(path_sub);
-			break;
-		case T_NestPath: /* Joins: */
-		case T_MergePath:
-		case T_HashPath:
-			path_join = (JoinPath*) path;
-			AssertContextPath(path_join->outerjoinpath);
-			AssertContextPath(path_join->innerjoinpath);
-			break;
+		vector = (RelOptInfo**) palloc(sizeof(RelOptInfo*) * nrels);
+		memcpy(vector, sequence, sizeof(RelOptInfo*) * nrels);
+
+		for(i = 0, vector_size = nrels; vector_size > 1;)
+		{
+			int j = i+1;
+			RelOptInfo *aux;
+
+			SDP_DEBUG_MSG2_SR("  s_phase_reconstruct(): i=%d, j=%d, nrets=%d", i, j, vector_size);
+
+			aux = make_join_rel(root, vector[i], vector[j]);
+			if (aux)
+			{
+				int k;
+				set_cheapest(aux);
+				vector[i] = aux;
+				for (k=j; k<vector_size-1; k++)
+					vector[k] = vector[k+1];
+				vector_size--;
+				i = 0;
+			}
+			else
+			{
+				i++;
+			}
+		}
+		Assert(vector_size == 1);
+		ret = vector[0];
+		pfree(vector);
 	}
 
+	Assert(ret && IsA(ret, RelOptInfo) && ret->cheapest_total_path);
+	SDP_DEBUG_MSG("  reconstructed s_phase plan: cost = %lf",
+			cheapest_total(ret));
+	SDP_DEBUG_MSG2_SR("< s_phase_reconstruct()");
+	return ret;
 }
-
-#endif /*USE_ASSERT_CHECKING*/
