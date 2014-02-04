@@ -613,3 +613,75 @@ octaveString(StringInfo str_ret, const char *str)
 		};
 	return find_replace_substrings(str_ret, str, find_replace);
 }
+
+/* //////////////// Python Variable Structure Generation /////////////////// */
+
+#define PRINT_PYTHON_NAME(graph, node, name_attr) \
+		DEBUGGRAPH_PRINTF(graph, "%s[\"%s\"][\""CppAsString(name_attr)\
+				"\"] = \"%s\"", \
+				graph->name, graph->node->internal_name, \
+				graph->node->name_attr)
+#define PRINT_PYTHON_ATTRIBUTE(graph, node, index) \
+		DEBUGGRAPH_PRINTF(graph, "%s[\"%s\"][\"%s\"] = \"%s\"", \
+				graph->name, graph->node->internal_name, \
+				graph->node->attributeNames[index], \
+				pythonString(&aux1, graph->node->attributeValues[index]))
+#define PRINT_PYTHON_EDGE(graph, edge) \
+		DEBUGGRAPH_PRINTF(graph, "%s[\"%s\"][\"%s\"] = \"%s\"", \
+				graph->name, graph->edge->source, \
+				graph->edge->label, \
+				graph->edge->destination)
+#define PRINT_PYTHON_UNNAMED_EDGE(graph, edge) \
+		DEBUGGRAPH_PRINTF(graph, "%s[\"%s\"][\"unnamed_refs\"].append(" \
+				"\"%s\")", \
+				graph->name, graph->edge->source, \
+				graph->edge->destination)
+
+static const char* pythonString(StringInfo str_ret,
+		const char *str);
+
+void printDebugGraphAsPythonDictionary(DebugGraph* graph)
+{
+	StringInfoData aux1;
+	int i,j;
+
+	Assert(graph);
+
+	initStringInfo(&aux1);
+
+	DEBUGGRAPH_PRINTF(graph, "%s = {}", graph->name);
+
+	for( i=0; i<graph->nodeCount; i++ )
+	{
+		DEBUGGRAPH_PRINTF(graph, "%s[\"%s\"] = {}", graph->name,
+				graph->nodes[i]->internal_name);
+		PRINT_PYTHON_NAME(graph, nodes[i], internal_name);
+		PRINT_PYTHON_NAME(graph, nodes[i], name);
+		DEBUGGRAPH_PRINTF(graph, "%s[\"%s\"][\"unnamed_refs\"] = []",
+				graph->name, graph->nodes[i]->internal_name);
+
+		for( j=0; j<graph->nodes[i]->attributeCount; j++ )
+		{
+			PRINT_PYTHON_ATTRIBUTE(graph, nodes[i], j);
+		}
+	}
+	for( i=0; i<graph->edgeCount; i++ )
+	{
+		if (graph->edges[i]->label[0] != '\0')
+			PRINT_PYTHON_EDGE(graph, edges[i]);
+		else
+			PRINT_PYTHON_UNNAMED_EDGE(graph, edges[i]);
+	}
+
+	pfree(aux1.data);
+}
+
+static const char*
+pythonString(StringInfo str_ret, const char *str)
+{
+	const char *find_replace[][2] = {
+			{"\"", "\\\""},
+			{NULL, NULL}
+		};
+	return find_replace_substrings(str_ret, str, find_replace);
+}

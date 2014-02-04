@@ -28,6 +28,7 @@
 #ifndef TWOPO_LIST_H_
 #define TWOPO_LIST_H_
 
+#include "ljqo.h"
 #include <postgres.h>
 
 typedef struct twopoList {

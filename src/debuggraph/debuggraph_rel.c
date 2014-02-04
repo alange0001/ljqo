@@ -62,13 +62,23 @@ printDebugGraphRel(PlannerInfo *root, RelOptInfo *rel, const char *name)
 
 	printDebugGraph(graph);
 
-	{ /* octave structure has "_octave" as suffix */
+	/*{  octave structure has "_octave" as suffix
 		StringInfoData str;
 		initStringInfo(&str);
 		appendStringInfo(&str, "%s_octave", name);
 
 		renameDebugGraph(graph, str.data);
 		printDebugGraphAsOctaveStruct(graph);
+
+		pfree(str.data);
+	} */
+	{ /* python structure has "_python" as suffix */
+		StringInfoData str;
+		initStringInfo(&str);
+		appendStringInfo(&str, "%s_python", name);
+
+		renameDebugGraph(graph, str.data);
+		printDebugGraphAsPythonDictionary(graph);
 
 		pfree(str.data);
 	}
