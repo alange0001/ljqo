@@ -308,12 +308,15 @@ set_T_IndexPath(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
 
 	{Cost indexStartupCost=0, indexTotalCost=0, indexSelectivity=0,
 	     indexCorrelation=0;
-	if (actual_node->indexinfo && actual_node->path.param_info)
+	int loops = 1;
+	if (actual_node->path.param_info)
+		loops = get_loop_count(root,
+                actual_node->path.param_info->ppi_req_outer);
+	if (actual_node->indexinfo)
 		OidFunctionCall7(actual_node->indexinfo->amcostestimate,
 	                     PointerGetDatum(root),
 	                     PointerGetDatum(actual_node),
-	                     Float8GetDatum(get_loop_count(root,
-	                           actual_node->path.param_info->ppi_req_outer)),
+	                     Float8GetDatum(loops),
 	                     PointerGetDatum(&indexStartupCost),
 	                     PointerGetDatum(&indexTotalCost),
 	                     PointerGetDatum(&indexSelectivity),
