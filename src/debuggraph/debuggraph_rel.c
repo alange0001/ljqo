@@ -33,6 +33,7 @@
 #if PG_VERSION_NUM/100 >= 903
 #include <access/htup_details.h>
 #endif
+#include <miscadmin.h>
 #include <lib/stringinfo.h>
 #include <parser/parsetree.h>
 #include <optimizer/pathnode.h>
@@ -110,6 +111,7 @@ static DebugNode* getParams(DebugGraph *graph)
 			MAXIMUM_ALIGNOF);
 
 	addDebugNodeAttributeArgs(n, "effective_cache_size", "%d", effective_cache_size);
+	addDebugNodeAttributeArgs(n, "work_mem", "%d", work_mem);
 
 	addDebugNodeAttributeArgs(n, "disable_cost", "%lf", disable_cost);
 
@@ -303,7 +305,9 @@ set_T_IndexPath(DebugGraph *graph, DebugNode *n, PlannerInfo *root,
 	WRITE_NODE_FIELD(indexinfo);
 	WRITE_NODE_FIELD(indexclauses);
 	WRITE_NODE_FIELD(indexquals);
+	WRITE_NODE_FIELD(indexqualcols);
 	WRITE_NODE_FIELD(indexorderbys);
+	WRITE_NODE_FIELD(indexorderbycols);
 	WRITE_INT_FIELD(indexscandir);
 
 	{Cost indexStartupCost=0, indexTotalCost=0, indexSelectivity=0,
