@@ -35,7 +35,8 @@
 bool sdp_enabled          = DEFAULT_SDP_ENABLED;
 int sdp_threshold         = DEFAULT_SDP_THRESHOLD;
 #endif
-int sdp_iteration_factor  = DEFAULT_SDP_ITERATION_FACTOR;
+int sdp_iteration_slope   = DEFAULT_SDP_ITERATION_SLOPE;
+int sdp_iteration_const   = DEFAULT_SDP_ITERATION_CONST;
 int sdp_min_iterations    = DEFAULT_SDP_MIN_ITERATIONS;
 int sdp_max_iterations    = DEFAULT_SDP_MAX_ITERATIONS;
 
@@ -704,7 +705,8 @@ s_phase(private_data_type* private_data)
 		RelOptInfo**  cur_rels = palloc(sizeof(RelOptInfo*) * nrels);
 		PlannerInfo*  root = private_data->root;
 		int           loop;
-		int           end_loop = nrels * sdp_iteration_factor;
+		int           end_loop = nrels * sdp_iteration_slope
+		                       + sdp_iteration_const;
 
 		/* this array of List* isn't used by SDP */
 		Assert(root->join_rel_level == NULL);

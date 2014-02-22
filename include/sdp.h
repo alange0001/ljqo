@@ -58,7 +58,8 @@ extern int  sdp_threshold;
 /*
  * Configuration variables
  */
-extern int sdp_iteration_factor;
+extern int sdp_iteration_slope;
+extern int sdp_iteration_const;
 extern int sdp_min_iterations;
 extern int sdp_max_iterations;
 
@@ -68,11 +69,14 @@ extern int sdp_max_iterations;
 #define DEFAULT_SDP_MIN_ITERATIONS    50
 #define     MIN_SDP_MIN_ITERATIONS    2
 #define     MAX_SDP_MIN_ITERATIONS    INT_MAX
-#define DEFAULT_SDP_MAX_ITERATIONS    240
+#define DEFAULT_SDP_MAX_ITERATIONS    INT_MAX
 #define     MIN_SDP_MAX_ITERATIONS    10
 #define     MAX_SDP_MAX_ITERATIONS    INT_MAX
-#define DEFAULT_SDP_ITERATION_FACTOR  4
-#define     MIN_SDP_ITERATION_FACTOR  1
-#define     MAX_SDP_ITERATION_FACTOR  100
+#define DEFAULT_SDP_ITERATION_SLOPE   5
+#define     MIN_SDP_ITERATION_SLOPE   0
+#define     MAX_SDP_ITERATION_SLOPE   100
+#define DEFAULT_SDP_ITERATION_CONST   250
+#define     MIN_SDP_ITERATION_CONST   0
+#define     MAX_SDP_ITERATION_CONST   INT_MAX/2
 
 #endif   /* SDP_H */
